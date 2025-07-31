@@ -45,7 +45,12 @@ class Tweet(Base):
 def get_database_url():
     """Get database URL from environment or use SQLite for local development"""
     if os.environ.get('DATABASE_URL'):
-        return os.environ.get('DATABASE_URL')
+        # Railway provides DATABASE_URL for PostgreSQL
+        database_url = os.environ.get('DATABASE_URL')
+        # Fix for SQLAlchemy 2.0 - replace postgres:// with postgresql://
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        return database_url
     else:
         return 'sqlite:///tweets.db'
 
@@ -54,7 +59,8 @@ def init_database():
     global _engine, _Session
     database_url = get_database_url()
     
-    # For SQLite, remove the old database file to ensure clean schema
+    # For SQLite only, remove the old database file to ensure clean schema
+    # Don't do this for PostgreSQL in production
     if database_url.startswith('sqlite:///'):
         db_file = database_url.replace('sqlite:///', '')
         if os.path.exists(db_file):

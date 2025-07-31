@@ -1,0 +1,484 @@
+{% extends "base.html" %}
+
+{% block title %}Review Tweets - CoopHive{% endblock %}
+
+{% block extra_css %}
+<style>
+    .tweet-editor {
+        margin-bottom: 30px;
+    }
+
+    .tweet-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 15px;
+        border-bottom: 2px solid #f0f0f0;
+    }
+
+    .tweet-id {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: 600;
+    }
+
+    .tweet-type {
+        background: #e3f2fd;
+        color: #1976d2;
+        padding: 6px 12px;
+        border-radius: 15px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .tweet-content-area {
+        position: relative;
+        margin-bottom: 20px;
+    }
+
+    .tweet-textarea {
+        width: 100%;
+        min-height: 120px;
+        padding: 20px;
+        border: 2px solid #e0e0e0;
+        border-radius: 15px;
+        font-size: 1.1rem;
+        line-height: 1.5;
+        resize: vertical;
+        transition: all 0.3s ease;
+        background: #fafafa;
+    }
+
+    .tweet-textarea:focus {
+        outline: none;
+        border-color: #667eea;
+        background: white;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .char-counter {
+        position: absolute;
+        bottom: 10px;
+        right: 15px;
+        font-size: 0.9rem;
+        font-weight: 600;
+        padding: 4px 8px;
+        border-radius: 10px;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .char-counter.good { color: #28a745; }
+    .char-counter.warning { color: #ffc107; }
+    .char-counter.danger { color: #dc3545; }
+
+    .tweet-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+
+    .meta-item {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+    }
+
+    .meta-label {
+        font-weight: 600;
+        color: #667eea;
+        font-size: 0.9rem;
+        text-transform: uppercase;
+        margin-bottom: 8px;
+    }
+
+    .meta-value {
+        font-size: 0.95rem;
+        color: #555;
+    }
+
+    .elements-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .element-tag {
+        background: #e8f5e8;
+        color: #2e7d32;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+    }
+
+    .tweet-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin-top: 20px;
+    }
+
+    .strategy-summary {
+        background: linear-gradient(135deg, #fff3cd, #ffeaa7);
+        border: 1px solid #ffeaa7;
+        margin-bottom: 30px;
+    }
+
+    .strategy-summary h3 {
+        color: #856404;
+        margin-bottom: 15px;
+    }
+
+    .preview-mode {
+        background: #f8f9fa;
+        border: 2px dashed #667eea;
+        border-radius: 15px;
+        padding: 20px;
+        margin: 20px 0;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        font-size: 1.1rem;
+        line-height: 1.4;
+    }
+
+    .tweet-preview {
+        background: white;
+        border: 1px solid #e1e8ed;
+        border-radius: 16px;
+        padding: 16px;
+        margin: 10px 0;
+        max-width: 500px;
+    }
+
+    .batch-actions {
+        position: sticky;
+        top: 20px;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        padding: 20px;
+        border-radius: 15px;
+        margin-bottom: 30px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .batch-actions h3 {
+        margin-bottom: 15px;
+        color: #667eea;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+
+    .stat-item {
+        text-align: center;
+        padding: 15px;
+        background: linear-gradient(135deg, #f8f9fa, #e9ecef);
+        border-radius: 10px;
+    }
+
+    .stat-number {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #667eea;
+        display: block;
+    }
+
+    .stat-label {
+        font-size: 0.9rem;
+        color: #666;
+        text-transform: uppercase;
+        font-weight: 600;
+    }
+
+    @media (max-width: 768px) {
+        .tweet-header {
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-start;
+        }
+        
+        .tweet-actions {
+            justify-content: center;
+        }
+        
+        .batch-actions {
+            position: static;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Campaign Statistics -->
+<div class="card batch-actions">
+    <h3>📊 Campaign Overview</h3>
+    <div class="stats-grid">
+        <div class="stat-item">
+            <span class="stat-number">{{ campaign.tweet_count }}</span>
+            <span class="stat-label">Total Tweets</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">{{ campaign.ready_for_deployment or 0 }}</span>
+            <span class="stat-label">Ready</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">{{ campaign.analysis_summary.input_batch_size }}</span>
+            <span class="stat-label">Source Tweets</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-number">{{ campaign.analysis_summary.top_engagement_score or 0 }}</span>
+            <span class="stat-label">Top Score</span>
+        </div>
+    </div>
+    
+    <div class="tweet-actions">
+        <button class="btn btn-success" onclick="approveAll()">✅ Approve All</button>
+        <button class="btn btn-primary" onclick="saveAll()">💾 Save All Changes</button>
+        <button class="btn btn-secondary" onclick="togglePreview()">👁️ Preview Mode</button>
+    </div>
+</div>
+
+<!-- Strategy Summary -->
+{% if campaign.analysis_summary %}
+<div class="card strategy-summary">
+    <h3>🎯 Content Strategy</h3>
+    <p><strong>Themes:</strong> {{ campaign.analysis_summary.dominant_themes | join(', ') }}</p>
+    <p><strong>Strategy:</strong> {{ campaign.analysis_summary.content_strategy }}</p>
+</div>
+{% endif %}
+
+<!-- Tweet Editors -->
+{% for tweet in campaign.tweets %}
+<div class="card tweet-editor" data-tweet-id="{{ tweet.id }}">
+    <div class="tweet-header">
+        <div>
+            <span class="tweet-id">{{ tweet.id }}</span>
+            <span class="tweet-type">{{ tweet.type.replace('_', ' ') }}</span>
+        </div>
+        <span class="status-badge status-{{ tweet.status.lower() }}">{{ tweet.status }}</span>
+    </div>
+    
+    <div class="tweet-content-area">
+        <textarea 
+            class="tweet-textarea" 
+            data-tweet-id="{{ tweet.id }}"
+            placeholder="Edit your tweet content..."
+            maxlength="280"
+            oninput="updateCharCount(this)"
+        >{{ tweet.content }}</textarea>
+        <div class="char-counter" id="counter-{{ tweet.id }}">{{ tweet.character_count }}/280</div>
+    </div>
+    
+    <div class="tweet-meta">
+        <div class="meta-item">
+            <div class="meta-label">Engagement Hook</div>
+            <div class="meta-value">{{ tweet.engagement_hook }}</div>
+        </div>
+        <div class="meta-item">
+            <div class="meta-label">CoopHive Elements</div>
+            <div class="meta-value">
+                <div class="elements-list">
+                    {% for element in tweet.coophive_elements %}
+                    <span class="element-tag">{{ element }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        <div class="meta-item">
+            <div class="meta-label">Discord Voice Patterns</div>
+            <div class="meta-value">{{ tweet.discord_voice_patterns | join(', ') }}</div>
+        </div>
+        <div class="meta-item">
+            <div class="meta-label">Theme Connection</div>
+            <div class="meta-value">{{ tweet.theme_connection }}</div>
+        </div>
+    </div>
+    
+    <div class="tweet-actions">
+        <button class="btn btn-primary" onclick="saveTweet('{{ tweet.id }}')">💾 Save Changes</button>
+        <button class="btn btn-success" onclick="updateStatus('{{ tweet.id }}', 'Approved')">✅ Approve</button>
+        <button class="btn btn-secondary" onclick="postToX('{{ tweet.id }}')">🚀 Post to X.com</button>
+        <button class="btn btn-danger" onclick="updateStatus('{{ tweet.id }}', 'Rejected')">❌ Reject</button>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const campaignBatch = '{{ campaign_batch }}';
+    const token = '{{ token }}';
+    let previewMode = false;
+
+    // Update character count in real-time
+    function updateCharCount(textarea) {
+        const tweetId = textarea.dataset.tweetId;
+        const counter = document.getElementById(`counter-${tweetId}`);
+        const count = textarea.value.length;
+        
+        counter.textContent = `${count}/280`;
+        
+        // Update counter color
+        counter.className = 'char-counter';
+        if (count <= 240) {
+            counter.classList.add('good');
+        } else if (count <= 270) {
+            counter.classList.add('warning');
+        } else {
+            counter.classList.add('danger');
+        }
+    }
+
+    // Initialize character counters
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.tweet-textarea').forEach(textarea => {
+            updateCharCount(textarea);
+        });
+    });
+
+    // Save individual tweet
+    async function saveTweet(tweetId) {
+        const textarea = document.querySelector(`textarea[data-tweet-id="${tweetId}"]`);
+        const button = event.target;
+        
+        button.dataset.originalText = button.innerHTML;
+        setLoading(button, true);
+        
+        try {
+            const result = await apiCall('/api/save-tweet', {
+                campaign_batch: campaignBatch,
+                tweet_id: tweetId,
+                content: textarea.value
+            }, 'POST');
+            
+            showNotification(result.message, 'success');
+            
+            // Update character counter
+            updateCharCount(textarea);
+            
+        } catch (error) {
+            showNotification(error.message, 'error');
+        } finally {
+            setLoading(button, false);
+        }
+    }
+
+    // Update tweet status
+    async function updateStatus(tweetId, status) {
+        const button = event.target;
+        button.dataset.originalText = button.innerHTML;
+        setLoading(button, true);
+        
+        try {
+            const result = await apiCall('/api/update-status', {
+                campaign_batch: campaignBatch,
+                tweet_id: tweetId,
+                status: status
+            }, 'POST');
+            
+            showNotification(result.message, 'success');
+            
+            // Update status badge
+            const statusBadge = document.querySelector(`[data-tweet-id="${tweetId}"] .status-badge`);
+            statusBadge.textContent = status;
+            statusBadge.className = `status-badge status-${status.toLowerCase()}`;
+            
+        } catch (error) {
+            showNotification(error.message, 'error');
+        } finally {
+            setLoading(button, false);
+        }
+    }
+
+    // Post to X.com
+    async function postToX(tweetId) {
+        if (!confirm('Are you sure you want to post this tweet to X.com? This action cannot be undone.')) {
+            return;
+        }
+        
+        const button = event.target;
+        button.dataset.originalText = button.innerHTML;
+        setLoading(button, true);
+        
+        try {
+            const result = await apiCall('/api/post-to-x', {
+                campaign_batch: campaignBatch,
+                tweet_id: tweetId
+            }, 'POST');
+            
+            showNotification(result.message, 'success');
+            
+            // Update status to Posted
+            updateStatus(tweetId, 'Posted');
+            
+        } catch (error) {
+            showNotification(error.message, 'error');
+        } finally {
+            setLoading(button, false);
+        }
+    }
+
+    // Batch operations
+    async function approveAll() {
+        const tweetIds = Array.from(document.querySelectorAll('[data-tweet-id]')).map(el => el.dataset.tweetId);
+        
+        for (const tweetId of tweetIds) {
+            await updateStatus(tweetId, 'Approved');
+        }
+        
+        showNotification(`Approved ${tweetIds.length} tweets`, 'success');
+    }
+
+    async function saveAll() {
+        const textareas = document.querySelectorAll('.tweet-textarea');
+        let savedCount = 0;
+        
+        for (const textarea of textareas) {
+            try {
+                await saveTweet(textarea.dataset.tweetId);
+                savedCount++;
+            } catch (error) {
+                console.error('Failed to save tweet:', error);
+            }
+        }
+        
+        showNotification(`Saved ${savedCount} tweets`, 'success');
+    }
+
+    function togglePreview() {
+        previewMode = !previewMode;
+        const textareas = document.querySelectorAll('.tweet-textarea');
+        
+        textareas.forEach(textarea => {
+            if (previewMode) {
+                // Create preview div
+                const preview = document.createElement('div');
+                preview.className = 'tweet-preview';
+                preview.innerHTML = textarea.value;
+                textarea.style.display = 'none';
+                textarea.parentNode.insertBefore(preview, textarea);
+            } else {
+                // Remove preview and show textarea
+                const preview = textarea.parentNode.querySelector('.tweet-preview');
+                if (preview) {
+                    preview.remove();
+                }
+                textarea.style.display = 'block';
+            }
+        });
+        
+        const button = document.querySelector('button[onclick="togglePreview()"]');
+        button.innerHTML = previewMode ? '✏️ Edit Mode' : '👁️ Preview Mode';
+    }
+</script>
+{% endblock %}

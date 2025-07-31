@@ -27,6 +27,40 @@ python app.py
 - **Home**: http://localhost:5000
 - **Review**: http://localhost:5000/review/{campaign_batch}?token={secure_token}
 
+## Railway Deployment
+
+### Automatic Deployment
+1. **Connect Repository**: Link your GitHub repository to Railway
+2. **Auto-Deploy**: Railway will automatically detect the Flask app and deploy it
+3. **Port Configuration**: The app uses port 5000 (Railway's default recommendation)
+4. **Environment Variables**: Set any required environment variables in Railway dashboard
+
+### Manual Deployment Steps
+1. **Fork/Clone**: Clone this repository to your local machine
+2. **Railway CLI**: Install Railway CLI and login
+   ```bash
+   npm install -g @railway/cli
+   railway login
+   ```
+3. **Deploy**: Run the deployment command
+   ```bash
+   railway up
+   ```
+
+### Railway Configuration Files
+- **Procfile**: Tells Railway to run `python app.py`
+- **runtime.txt**: Specifies Python 3.11.0
+- **requirements.txt**: Lists all Python dependencies
+- **app.py**: Configured to use Railway's PORT environment variable
+
+### Environment Variables (Optional)
+Set these in Railway dashboard if needed:
+```bash
+FLASK_ENV=production
+SECRET_KEY=your-secret-key
+N8N_WEBHOOK_URL=https://n8n.coophive.com/webhook/post-to-x
+```
+
 ## API Endpoints
 
 ### Receive Tweet Data (from n8n)
@@ -81,7 +115,7 @@ Content-Type: application/json
 
 ### Step 1: Update "POST to WebApp" Node
 ```
-URL: http://your-flask-app.com/api/receive-tweets
+URL: https://your-railway-app.railway.app/api/receive-tweets
 Method: POST
 Body: {{ $json }} (the web app payload from Generated Tweets Processor)
 ```
@@ -114,16 +148,15 @@ Action: Post tweet to X.com API
 
 ## Production Deployment
 
-### Environment Variables
-```bash
-export FLASK_ENV=production
-export SECRET_KEY=your-secret-key
-export N8N_WEBHOOK_URL=https://n8n.coophive.com/webhook/post-to-x
-```
+### Railway Production Settings
+- **Auto-Deploy**: Enabled for main branch
+- **Health Checks**: Configure health check endpoint
+- **SSL/HTTPS**: Automatically provided by Railway
+- **Custom Domains**: Add custom domain in Railway dashboard
 
 ### Database Integration
 Replace in-memory `tweet_storage` with:
-- PostgreSQL for production
+- PostgreSQL (available as Railway service)
 - Redis for caching
 - MongoDB for document storage
 

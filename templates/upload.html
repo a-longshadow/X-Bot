@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block title %}Upload JSON Data - CoopHive{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="/" class="btn btn-secondary">← Back to Home</a>
+</div>
+
+<!-- JSON Upload Section -->
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">📁 Upload JSON Data</h3>
+    
+    <div style="max-width: 600px; margin: 0 auto; text-align: center;">
+        <p style="font-size: 1.1rem; color: #666; margin-bottom: 30px;">
+            Upload a JSON file containing tweet campaign data for review and editing.
+            Supports n8n output format and mock data formats.
+        </p>
+        
+        <div style="background: #f8f9fa; padding: 30px; border-radius: 15px; margin-bottom: 30px; border: 2px dashed #667eea;">
+            <input type="file" id="jsonFileInput" accept=".json" style="display: none;" onchange="handleFileSelect(this)">
+            <label for="jsonFileInput" class="btn btn-secondary" style="cursor: pointer; margin-bottom: 15px; font-size: 1.1rem; padding: 15px 30px;">
+                📁 Choose JSON File
+            </label>
+            <div id="selectedFileName" style="color: #666; font-size: 1rem; margin-top: 15px;"></div>
+        </div>
+        
+        <button id="uploadBtn" class="btn btn-primary" onclick="uploadJsonFile()" disabled style="font-size: 1.1rem; padding: 15px 30px;">
+            🚀 Upload & Process JSON
+        </button>
+        
+        <div style="margin-top: 30px; font-size: 0.95rem; color: #666;">
+            <p><strong>Supported formats:</strong></p>
+            <ul style="text-align: left; display: inline-block; margin: 15px 0; line-height: 1.6;">
+                <li>n8n workflow output with campaign data</li>
+                <li>Direct campaign objects with tweets array</li>
+                <li>Mock data arrays with processed_tweets</li>
+                <li>Individual tweet objects for batch processing</li>
+            </ul>
+        </div>
+        
+        <div style="margin-top: 30px; padding: 20px; background: #e3f2fd; border-radius: 10px; border-left: 4px solid #2196f3;">
+            <h4 style="color: #1976d2; margin-bottom: 10px;">💡 Quick Access</h4>
+            <p style="color: #1976d2; margin: 0;">
+                After upload, content will be available at <a href="/campaigns" style="color: #1976d2; font-weight: bold;">/campaigns</a> 
+                and can be reviewed directly without any restrictions.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Uploads -->
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">📋 Recent Uploads</h3>
+    <div id="recentUploads">
+        <p style="color: #666; text-align: center;">Loading recent uploads...</p>
+    </div>
+</div>
+
+<script>
+let selectedFile = null;
+
+function handleFileSelect(input) {
+    const file = input.files[0];
+    const fileNameDiv = document.getElementById('selectedFileName');
+    const uploadBtn = document.getElementById('uploadBtn');
+    
+    if (file) {
+        selectedFile = file;
+        fileNameDiv.innerHTML = `<strong>Selected:</strong> ${file.name} <br><span style="color: #888;">(${(file.size / 1024).toFixed(1)} KB)</span>`;
+        uploadBtn.disabled = false;
+        
+        // Validate file type
+        if (!file.name.endsWith('.json')) {
+            fileNameDiv.innerHTML = `<span style="color: #dc3545;">⚠️ Please select a JSON file</span>`;
+            uploadBtn.disabled = true;
+            selectedFile = null;
+        }
+    } else {
+        selectedFile = null;
+        fileNameDiv.textContent = '';
+        uploadBtn.disabled = true;
+    }
+}
+
+async function uploadJsonFile() {
+    if (!selectedFile) {
+        showNotification('Please select a JSON file first', 'error');
+        return;
+    }
+    
+    const uploadBtn = document.getElementById('uploadBtn');
+    const originalText = uploadBtn.innerHTML;
+    uploadBtn.innerHTML = '<span class="loading"></span> Processing...';
+    uploadBtn.disabled = true;
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        
+        const response = await fetch('/api/upload-json', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showNotification(result.message, 'success');
+            
+            // Show processed campaigns with direct links
+            if (result.campaigns && result.campaigns.length > 0) {
+                let campaignsList = result.campaigns.map(c => 
+                    `<a href="/review/${c.campaign_batch}" style="color: #667eea; text-decoration: none; font-weight: bold;">${c.campaign_batch}</a> (${c.tweet_count} tweets) - ${c.status}`
+                ).join('<br>');
+                
+                setTimeout(() => {
+                    showNotification(`Campaigns processed:<br>${campaignsList}`, 'success');
+                    loadRecentUploads(); // Refresh recent uploads
+                }, 1500);
+            }
+            
+            // Reset form
+            document.getElementById('jsonFileInput').value = '';
+            document.getElementById('selectedFileName').textContent = '';
+            selectedFile = null;
+            
+        } else {
+            throw new Error(result.message || 'Upload failed');
+        }
+        
+    } catch (error) {
+        showNotification(error.message, 'error');
+    } finally {
+        uploadBtn.innerHTML = originalText;
+        uploadBtn.disabled = selectedFile === null;
+    }
+}
+
+// Load and display recent uploads
+async function loadRecentUploads() {
+    try {
+        const response = await fetch('/api/campaigns');
+        const result = await response.json();
+        
+        if (response.ok && result.campaigns) {
+            const uploadsContainer = document.getElementById('recentUploads');
+            
+            if (result.campaigns.length === 0) {
+                uploadsContainer.innerHTML = '<p style="color: #666; text-align: center;">No content uploaded yet. Upload a JSON file to get started.</p>';
+                return;
+            }
+            
+            // Show only recent campaigns (first 10 from already sorted list)
+            const recentCampaigns = result.campaigns.slice(0, 10);
+            
+            let uploadsHtml = '';
+            recentCampaigns.forEach(campaign => {
+                const date = new Date(campaign.generated_at).toLocaleString();
+                uploadsHtml += `
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>${campaign.campaign_batch}</strong><br>
+                            <span style="color: #666; font-size: 0.9rem;">${campaign.tweet_count} tweets • ${date} • ${campaign.source}</span>
+                        </div>
+                        <a href="/review/${campaign.campaign_batch}" class="btn btn-primary" style="text-decoration: none;">
+                            📝 Review Now
+                        </a>
+                    </div>
+                `;
+            });
+            
+            uploadsContainer.innerHTML = uploadsHtml;
+        }
+    } catch (error) {
+        console.error('Failed to load recent uploads:', error);
+        document.getElementById('recentUploads').innerHTML = '<p style="color: #dc3545; text-align: center;">Failed to load recent uploads</p>';
+    }
+}
+
+// Load recent uploads when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadRecentUploads();
+});
+</script>
+{% endblock %}

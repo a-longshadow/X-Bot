@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}System Status - CoopHive{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="/" class="btn btn-secondary">← Back to Home</a>
+</div>
+
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">🔧 System Status</h3>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+        <div style="padding: 15px; background: #d4edda; border-radius: 10px; border-left: 4px solid #28a745;">
+            <h4 style="color: #155724; margin-bottom: 5px;">✅ Flask App</h4>
+            <p style="color: #155724; font-size: 0.9rem; margin: 0;">Running and ready to receive campaigns</p>
+        </div>
+        
+        <div style="padding: 15px; background: #cce5ff; border-radius: 10px; border-left: 4px solid #004085;">
+            <h4 style="color: #004085; margin-bottom: 5px;">🔗 API Endpoints</h4>
+            <p style="color: #004085; font-size: 0.9rem; margin: 0;">All endpoints active and responding</p>
+        </div>
+        
+        <div style="padding: 15px; background: #fff3cd; border-radius: 10px; border-left: 4px solid #856404;">
+            <h4 style="color: #856404; margin-bottom: 5px;">⚡ N8n Integration</h4>
+            <p style="color: #856404; font-size: 0.9rem; margin: 0;">Ready to receive webhook data</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">📊 API Endpoints</h3>
+    
+    <div style="font-family: monospace; font-size: 0.9rem;">
+        <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <h4 style="color: #667eea; margin-bottom: 10px;">POST /api/receive-tweets</h4>
+            <p style="color: #666; margin-bottom: 10px;">Receive tweet data from n8n workflow</p>
+            <div style="background: #e9ecef; padding: 10px; border-radius: 5px;">
+                Content-Type: application/json<br>
+                Body: Campaign data with tweets array
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <h4 style="color: #667eea; margin-bottom: 10px;">POST /api/upload-json</h4>
+            <p style="color: #666; margin-bottom: 10px;">Upload JSON file with campaign data</p>
+            <div style="background: #e9ecef; padding: 10px; border-radius: 5px;">
+                Content-Type: multipart/form-data<br>
+                Field: file (JSON file)
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <h4 style="color: #667eea; margin-bottom: 10px;">POST /api/save-tweet</h4>
+            <p style="color: #666; margin-bottom: 10px;">Save edited tweet content</p>
+            <div style="background: #e9ecef; padding: 10px; border-radius: 5px;">
+                Body: {campaign_batch, tweet_id, content}
+            </div>
+        </div>
+        
+        <div style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+            <h4 style="color: #667eea; margin-bottom: 10px;">GET /api/campaigns</h4>
+            <p style="color: #666; margin-bottom: 10px;">List all available campaigns</p>
+            <div style="background: #e9ecef; padding: 10px; border-radius: 5px;">
+                Returns: Array of campaigns with metadata
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">💾 Storage Information</h3>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px;">
+            <h4 style="color: #667eea; margin-bottom: 15px;">🗄️ Database Storage</h4>
+            <ul style="color: #666; line-height: 1.6;">
+                <li>PostgreSQL for production</li>
+                <li>SQLite for local development</li>
+                <li>Persistent across deployments</li>
+                <li>Supports multiple server instances</li>
+            </ul>
+        </div>
+        
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px;">
+            <h4 style="color: #667eea; margin-bottom: 15px;">💾 Memory Storage</h4>
+            <ul style="color: #666; line-height: 1.6;">
+                <li>Fallback for demo mode</li>
+                <li>Lost on server restart</li>
+                <li>Single instance only</li>
+                <li>Immediate availability</li>
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}

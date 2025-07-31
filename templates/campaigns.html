@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Campaigns - CoopHive{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="/" class="btn btn-secondary">← Back to Home</a>
+</div>
+
+<!-- Upload Link -->
+<div class="card" style="text-align: center; padding: 30px;">
+    <h3 style="color: #667eea; margin-bottom: 15px;">📁 Need to Upload Data?</h3>
+    <p style="color: #666; margin-bottom: 20px;">
+        Upload JSON files containing tweet content for review and editing.
+    </p>
+    <a href="/upload" class="btn btn-primary" style="text-decoration: none;">
+        Go to Upload Page
+    </a>
+</div>
+
+<!-- Available Campaigns Section -->
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">📋 Available Campaigns</h3>
+    <div id="campaignsList">
+        <p style="color: #666; text-align: center;">Loading campaigns...</p>
+    </div>
+</div>
+
+<script>
+// Load and display available campaigns
+async function loadCampaigns() {
+    try {
+        const response = await fetch('/api/campaigns');
+        const result = await response.json();
+        
+        if (response.ok && result.campaigns) {
+            const campaignsContainer = document.getElementById('campaignsList');
+            
+            if (result.campaigns.length === 0) {
+                campaignsContainer.innerHTML = '<p style="color: #666; text-align: center;">No content available. <a href="/upload" style="color: #667eea;">Upload a JSON file</a> or receive data from n8n workflow.</p>';
+                return;
+            }
+            
+            // Sort campaigns by generated_at in reverse chronological order (newest first)
+            result.campaigns.sort((a, b) => {
+                const dateA = new Date(a.generated_at);
+                const dateB = new Date(b.generated_at);
+                return dateB - dateA; // Newest first
+            });
+            
+            let campaignsHtml = '';
+            result.campaigns.forEach(campaign => {
+                // Create human-readable UTC date - "Tuesday 31-July-2025, 23:09:41"
+                const dateObj = new Date(campaign.generated_at);
+                const options = { 
+                    weekday: 'long', 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    timeZone: 'UTC'
+                };
+                const humanDate = dateObj.toLocaleDateString('en-US', options).replace(',', '') + ', ' + 
+                                 dateObj.toLocaleTimeString('en-US', {hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'UTC', hour12: false});
+                
+                // Determine campaign type and color
+                const isUpload = campaign.campaign_batch.startsWith('uploaded_');
+                const isBatch = campaign.campaign_batch.startsWith('batch_');
+                
+                let campaignType = 'Unknown';
+                let typeIcon = '📄';
+                
+                if (isUpload) {
+                    campaignType = 'JSON Upload';
+                    typeIcon = '📁';
+                } else if (isBatch) {
+                    campaignType = 'API Batch';
+                    typeIcon = '🔄';
+                }
+                
+                // Determine status-based color coding
+                const statusCounts = campaign.status_counts || {};
+                const totalTweets = campaign.tweet_count;
+                const approvedCount = statusCounts['Approved'] || 0;
+                const postedCount = statusCounts['Posted'] || 0;
+                const rejectedCount = statusCounts['Rejected'] || 0;
+                const deletedCount = statusCounts['Deleted'] || 0;
+                const draftCount = statusCounts['Draft'] || 0;
+                
+                // Calculate completion percentage (approved + posted)
+                const completedCount = approvedCount + postedCount;
+                const completionPercentage = totalTweets > 0 ? (completedCount / totalTweets) * 100 : 0;
+                
+                let borderColor = '#6c757d'; // Default grey
+                let bgColor = '#f8f9fa'; // Default light grey
+                let statusIcon = '⏳';
+                let statusText = 'Pending';
+                
+                if (completionPercentage === 100) {
+                    // All approved/posted - GREEN
+                    borderColor = '#28a745';
+                    bgColor = '#f8fff9';
+                    statusIcon = '✅';
+                    statusText = 'Complete';
+                } else if (completionPercentage >= 50) {
+                    // Partially approved/posted - YELLOW
+                    borderColor = '#ffc107';
+                    bgColor = '#fffdf0';
+                    statusIcon = '🔄';
+                    statusText = 'In Progress';
+                } else if (rejectedCount > 0 || deletedCount > 0) {
+                    // Has rejected/deleted - ORANGE
+                    borderColor = '#fd7e14';
+                    bgColor = '#fff8f0';
+                    statusIcon = '⚠️';
+                    statusText = 'Needs Review';
+                } else {
+                    // Mostly drafts - GREY
+                    borderColor = '#6c757d';
+                    bgColor = '#f8f9fa';
+                    statusIcon = '📝';
+                    statusText = 'Draft';
+                }
+                
+                // Use title if available, otherwise create readable name
+                let displayName = campaign.title || campaign.campaign_batch;
+                let subTitle = campaign.description || '';
+                
+                // If no title, create readable campaign name
+                if (!campaign.title) {
+                    if (isUpload) {
+                        const datePart = campaign.campaign_batch.replace('uploaded_', '');
+                        const year = datePart.substring(0, 4);
+                        const month = datePart.substring(4, 6);
+                        const day = datePart.substring(6, 8);
+                        const time = datePart.substring(9);
+                        displayName = `Upload ${month}/${day}/${year} at ${time.substring(0,2)}:${time.substring(2,4)}`;
+                    } else if (isBatch) {
+                        displayName = campaign.campaign_batch.replace('batch_', 'Batch ').replace(/_/g, ' ');
+                    }
+                }
+                
+                campaignsHtml += `
+                    <div style="background: ${bgColor}; padding: 20px; border-radius: 10px; margin-bottom: 15px; border-left: 4px solid ${borderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                            <div style="flex: 1;">
+                                <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                    <span style="font-size: 1.2rem; margin-right: 8px;">${typeIcon}</span>
+                                    <span style="background: ${isUpload ? '#28a745' : '#007bff'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; margin-right: 10px;">
+                                        ${campaignType}
+                                    </span>
+                                    <span style="background: ${borderColor}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; margin-right: 10px;">
+                                        ${statusIcon} ${statusText}
+                                    </span>
+                                    <span style="color: #666; font-size: 0.8rem;">${campaign.campaign_batch}</span>
+                                </div>
+                                <h4 style="margin: 0 0 8px 0; color: #333; font-size: 1.1rem;">${displayName}</h4>
+                                ${subTitle ? `<div style="margin-bottom: 8px; color: #666; font-size: 0.9rem; font-style: italic;">${subTitle}</div>` : ''}
+                                <div style="margin-bottom: 8px; color: #666; font-size: 0.85rem;">
+                                    <strong>Created:</strong> ${humanDate}
+                                </div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 15px; color: #666; font-size: 0.9rem;">
+                                    <span><strong>${campaign.tweet_count}</strong> tweets total</span>
+                                    ${approvedCount > 0 ? `<span style="color: #28a745;">✅ ${approvedCount} approved</span>` : ''}
+                                    ${postedCount > 0 ? `<span style="color: #007bff;">🚀 ${postedCount} posted</span>` : ''}
+                                    ${draftCount > 0 ? `<span style="color: #6c757d;">📝 ${draftCount} drafts</span>` : ''}
+                                    ${rejectedCount > 0 ? `<span style="color: #dc3545;">❌ ${rejectedCount} rejected</span>` : ''}
+                                    ${deletedCount > 0 ? `<span style="color: #6c757d;">🗑️ ${deletedCount} deleted</span>` : ''}
+                                    ${campaign.source ? `<span style="color: ${campaign.source === 'database' ? '#28a745' : '#ffc107'};">📊 ${campaign.source}</span>` : ''}
+                                </div>
+                            </div>
+                            <a href="/review/${campaign.campaign_batch}" class="btn btn-primary" style="text-decoration: none; background: ${borderColor}; border-color: ${borderColor}; margin-left: 15px;">
+                                📝 Review
+                            </a>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            campaignsContainer.innerHTML = campaignsHtml;
+        }
+    } catch (error) {
+        console.error('Failed to load campaigns:', error);
+    }
+}
+
+// Load campaigns when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadCampaigns();
+});
+</script>
+{% endblock %}

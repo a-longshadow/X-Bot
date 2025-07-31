@@ -1,72 +1,51 @@
 {% extends "base.html" %}
 
-{% block title %}CoopHive Content Manager{% endblock %}
+{% block title %}Tweet Manager{% endblock %}
 
 {% block content %}
 <div class="card" style="text-align: center; padding: 50px;">
-    <h2 style="margin-bottom: 30px; color: #667eea;">Welcome to CoopHive Content Manager</h2>
+    <h2 style="margin-bottom: 30px; color: #667eea;">Welcome to Tweet Manager</h2>
     
-    <div style="max-width: 600px; margin: 0 auto;">
+    <div style="max-width: 500px; margin: 0 auto;">
         <p style="font-size: 1.2rem; color: #666; margin-bottom: 40px;">
-            Professional tweet review and publishing system for AI-generated social media content.
+            Review and edit AI-generated social media content.
         </p>
         
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px;">
-            <div style="padding: 20px; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px;">
-                <h3 style="color: #667eea; margin-bottom: 10px;">🔍 Review</h3>
-                <p style="color: #666; font-size: 0.9rem;">Edit and approve AI-generated tweets with real-time character counting</p>
-            </div>
-            
-            <div style="padding: 20px; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px;">
-                <h3 style="color: #667eea; margin-bottom: 10px;">🚀 Publish</h3>
-                <p style="color: #666; font-size: 0.9rem;">Direct integration with X.com for one-click publishing</p>
-            </div>
-            
-            <div style="padding: 20px; background: linear-gradient(135deg, #f8f9fa, #e9ecef); border-radius: 15px;">
-                <h3 style="color: #667eea; margin-bottom: 10px;">📊 Track</h3>
-                <p style="color: #666; font-size: 0.9rem;">Monitor campaign performance and engagement metrics</p>
-            </div>
+        <div style="margin-bottom: 30px;">
+            <a href="/upload" class="btn btn-primary" style="margin: 10px; text-decoration: none;">
+                📁 Upload JSON Data
+            </a>
+            <a href="/campaigns" class="btn btn-secondary" style="margin: 10px; text-decoration: none;">
+                📋 View Campaigns
+            </a>
         </div>
         
-        <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 20px; border-radius: 15px; margin-bottom: 30px;">
-            <h4 style="color: #856404; margin-bottom: 10px;">🔗 Access via Email Link</h4>
-            <p style="color: #856404; font-size: 0.9rem;">
-                This system is accessed through secure links sent via email from the CoopHive AI workflow. 
-                Each campaign has a unique token for secure access.
-            </p>
+        <div style="margin-bottom: 30px;">
+            <h4 style="color: #667eea; margin-bottom: 15px;">Quick Access by Status:</h4>
+            <a href="/drafts" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
+                📝 Drafts
+            </a>
+            <a href="/approved" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
+                ✅ Approved
+            </a>
+            <a href="/posted" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
+                🚀 Posted
+            </a>
+            <a href="/rejected" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
+                ❌ Rejected
+            </a>
+            <a href="/deleted" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
+                🗑️ Deleted
+            </a>
         </div>
         
-        <div style="color: #666; font-size: 0.9rem;">
-            <p><strong>Features:</strong></p>
-            <ul style="text-align: left; display: inline-block; margin: 10px 0;">
-                <li>Real-time character count validation</li>
-                <li>Brand voice and technical element tracking</li>
-                <li>Batch operations for efficiency</li>
-                <li>Preview mode for final review</li>
-                <li>Direct X.com publishing integration</li>
-                <li>Campaign analytics and metrics</li>
-            </ul>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <h3 style="color: #667eea; margin-bottom: 20px;">🔧 System Status</h3>
-    
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
-        <div style="padding: 15px; background: #d4edda; border-radius: 10px; border-left: 4px solid #28a745;">
-            <h4 style="color: #155724; margin-bottom: 5px;">✅ Flask App</h4>
-            <p style="color: #155724; font-size: 0.9rem; margin: 0;">Running and ready to receive campaigns</p>
-        </div>
-        
-        <div style="padding: 15px; background: #cce5ff; border-radius: 10px; border-left: 4px solid #004085;">
-            <h4 style="color: #004085; margin-bottom: 5px;">🔗 API Endpoints</h4>
-            <p style="color: #004085; font-size: 0.9rem; margin: 0;">All endpoints active and responding</p>
-        </div>
-        
-        <div style="padding: 15px; background: #fff3cd; border-radius: 10px; border-left: 4px solid #856404;">
-            <h4 style="color: #856404; margin-bottom: 5px;">⚡ N8n Integration</h4>
-            <p style="color: #856404; font-size: 0.9rem; margin: 0;">Ready to receive webhook data</p>
+        <div style="margin-bottom: 30px;">
+            <a href="/all-tweets" class="btn btn-primary" style="margin: 10px; text-decoration: none;">
+                📋 All Tweets & CSV Export
+            </a>
+            <a href="/status" class="btn btn-secondary" style="margin: 10px; text-decoration: none;">
+                🔧 System Status
+            </a>
         </div>
     </div>
 </div>

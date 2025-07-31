@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+
+{% block title %}All Tweets - Tweet Manager{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="/campaigns" class="btn btn-secondary">← Back to Campaigns</a>
+    <a href="/" class="btn btn-secondary" style="margin-left: 10px;">🏠 Home</a>
+</div>
+
+<!-- Status Filter Navigation -->
+<div class="card" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+        <a href="/drafts" class="btn btn-secondary" style="text-decoration: none;">📝 Drafts</a>
+        <a href="/approved" class="btn btn-secondary" style="text-decoration: none;">✅ Approved</a>
+        <a href="/posted" class="btn btn-secondary" style="text-decoration: none;">🚀 Posted</a>
+        <a href="/rejected" class="btn btn-secondary" style="text-decoration: none;">❌ Rejected</a>
+        <a href="/deleted" class="btn btn-secondary" style="text-decoration: none;">🗑️ Deleted</a>
+        <div style="margin-left: auto;">
+            <button class="btn btn-primary" onclick="exportCSV()">📊 Download CSV</button>
+        </div>
+    </div>
+</div>
+
+<!-- All Tweets Header -->
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">📋 All Tweets in System</h3>
+    
+    <div id="tweetsStats" style="margin-bottom: 20px;">
+        <p style="color: #666;">Loading tweets...</p>
+    </div>
+    
+    <!-- Search and Filter -->
+    <div style="margin-bottom: 20px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
+        <input type="text" id="searchInput" placeholder="Search tweets..." 
+               style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; flex: 1; min-width: 200px;">
+        <select id="statusFilter" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px;">
+            <option value="">All Statuses</option>
+            <option value="Draft">Draft</option>
+            <option value="Approved">Approved</option>
+            <option value="Posted">Posted</option>
+            <option value="Rejected">Rejected</option>
+            <option value="Deleted">Deleted</option>
+        </select>
+        <select id="campaignFilter" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px;">
+            <option value="">All Campaigns</option>
+        </select>
+        <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
+    </div>
+    
+    <div id="tweetsList">
+        <p style="color: #666; text-align: center;">Loading tweets...</p>
+    </div>
+</div>
+
+<script>
+let allTweets = [];
+let filteredTweets = [];
+
+// Load all tweets
+async function loadAllTweets() {
+    try {
+        const response = await fetch('/api/all-tweets');
+        const result = await response.json();
+        
+        const statsContainer = document.getElementById('tweetsStats');
+        const tweetsContainer = document.getElementById('tweetsList');
+        
+        if (response.ok && result.tweets) {
+            allTweets = result.tweets;
+            filteredTweets = [...allTweets];
+            
+            // Update stats
+            const statusCounts = {
+                Draft: 0, Approved: 0, Posted: 0, Rejected: 0, Deleted: 0
+            };
+            
+            const campaigns = new Set();
+            
+            allTweets.forEach(tweet => {
+                const status = tweet.status || 'Draft';
+                statusCounts[status] = (statusCounts[status] || 0) + 1;
+                campaigns.add(tweet.campaign_batch);
+            });
+            
+            statsContainer.innerHTML = `
+                <div style="display: flex; gap: 20px; flex-wrap: wrap; background: #f8f9fa; padding: 15px; border-radius: 10px;">
+                    <div><strong>Total:</strong> ${result.total}</div>
+                    <div><strong>📝 Draft:</strong> ${statusCounts.Draft}</div>
+                    <div><strong>✅ Approved:</strong> ${statusCounts.Approved}</div>
+                    <div><strong>🚀 Posted:</strong> ${statusCounts.Posted}</div>
+                    <div><strong>❌ Rejected:</strong> ${statusCounts.Rejected}</div>
+                    <div><strong>🗑️ Deleted:</strong> ${statusCounts.Deleted}</div>
+                    <div><strong>Campaigns:</strong> ${campaigns.size}</div>
+                </div>
+            `;
+            
+            // Populate campaign filter
+            const campaignFilter = document.getElementById('campaignFilter');
+            const sortedCampaigns = Array.from(campaigns).sort();
+            sortedCampaigns.forEach(campaign => {
+                const option = document.createElement('option');
+                option.value = campaign;
+                option.textContent = campaign;
+                campaignFilter.appendChild(option);
+            });
+            
+            displayTweets(filteredTweets);
+        } else {
+            statsContainer.innerHTML = '<p style="color: #dc3545;">Failed to load tweets</p>';
+            tweetsContainer.innerHTML = '<p style="color: #dc3545;">Failed to load tweets</p>';
+        }
+    } catch (error) {
+        console.error('Failed to load tweets:', error);
+        document.getElementById('tweetsStats').innerHTML = '<p style="color: #dc3545;">Error loading tweets</p>';
+        document.getElementById('tweetsList').innerHTML = '<p style="color: #dc3545;">Error loading tweets</p>';
+    }
+}
+
+// Display tweets
+function displayTweets(tweets) {
+    const container = document.getElementById('tweetsList');
+    
+    if (tweets.length === 0) {
+        container.innerHTML = `
+            <div style="text-align: center; padding: 40px; color: #666;">
+                <p>No tweets found matching your filters.</p>
+            </div>
+        `;
+        return;
+    }
+    
+    let tweetsHtml = '';
+    tweets.forEach(tweet => {
+        const lastModified = tweet.last_modified ? new Date(tweet.last_modified).toLocaleString() : 'Never';
+        const postedDate = tweet.posted_date ? new Date(tweet.posted_date).toLocaleString() : '';
+        const deletedDate = tweet.deleted_at ? new Date(tweet.deleted_at).toLocaleString() : '';
+        const generatedDate = tweet.generated_at ? new Date(tweet.generated_at).toLocaleString() : '';
+        
+        tweetsHtml += `
+            <div class="tweet-card" style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 15px; border-left: 4px solid #667eea;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                    <div>
+                        <span style="background: #667eea; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.8rem; font-weight: 500;">
+                            ${tweet.id}
+                        </span>
+                        <span style="background: #e3f2fd; color: #1976d2; padding: 4px 12px; border-radius: 15px; font-size: 0.8rem; font-weight: 500; margin-left: 10px;">
+                            ${tweet.type ? tweet.type.replace('_', ' ').toUpperCase() : 'TWEET'}
+                        </span>
+                    </div>
+                    <span class="status-badge status-${tweet.status.toLowerCase()}">${tweet.status}</span>
+                </div>
+                
+                <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #1da1f2;">
+                    <p style="margin: 0; font-size: 1.1rem; line-height: 1.4;">${tweet.content}</p>
+                    <div style="margin-top: 10px; color: #666; font-size: 0.9rem;">
+                        <strong>${tweet.character_count}/280</strong> characters
+                        ${tweet.engagement_hook ? `<br><strong>Hook:</strong> ${tweet.engagement_hook}` : ''}
+                    </div>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #666;">
+                    <div>
+                        <strong>Campaign:</strong> ${tweet.campaign_batch}<br>
+                        ${generatedDate ? `<strong>Generated:</strong> ${generatedDate}<br>` : ''}
+                        <strong>Last Modified:</strong> ${lastModified}
+                        ${postedDate ? `<br><strong>Posted:</strong> ${postedDate}` : ''}
+                        ${deletedDate ? `<br><strong>Deleted:</strong> ${deletedDate}` : ''}
+                    </div>
+                    <div style="display: flex; gap: 10px;">
+                        <a href="/review/${tweet.campaign_batch}" class="btn btn-primary" style="text-decoration: none; font-size: 0.9rem;">
+                            📝 Edit
+                        </a>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = tweetsHtml;
+}
+
+// Filter functions
+function filterTweets() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const statusFilter = document.getElementById('statusFilter').value;
+    const campaignFilter = document.getElementById('campaignFilter').value;
+    
+    filteredTweets = allTweets.filter(tweet => {
+        const matchesSearch = !searchTerm || 
+            tweet.content.toLowerCase().includes(searchTerm) ||
+            tweet.id.toLowerCase().includes(searchTerm) ||
+            tweet.campaign_batch.toLowerCase().includes(searchTerm);
+        
+        const matchesStatus = !statusFilter || tweet.status === statusFilter;
+        const matchesCampaign = !campaignFilter || tweet.campaign_batch === campaignFilter;
+        
+        return matchesSearch && matchesStatus && matchesCampaign;
+    });
+    
+    displayTweets(filteredTweets);
+}
+
+function clearFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('statusFilter').value = '';
+    document.getElementById('campaignFilter').value = '';
+    filteredTweets = [...allTweets];
+    displayTweets(filteredTweets);
+}
+
+// CSV Export
+async function exportCSV() {
+    try {
+        const response = await fetch('/api/export-csv');
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `all_tweets_${new Date().toISOString().slice(0,19).replace(/:/g, '-')}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+            
+            showNotification('CSV export started! Check your downloads.', 'success');
+        } else {
+            showNotification('Failed to export CSV', 'error');
+        }
+    } catch (error) {
+        showNotification('Error exporting CSV', 'error');
+    }
+}
+
+// Event listeners
+document.getElementById('searchInput').addEventListener('input', filterTweets);
+document.getElementById('statusFilter').addEventListener('change', filterTweets);
+document.getElementById('campaignFilter').addEventListener('change', filterTweets);
+
+// Load tweets when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadAllTweets();
+});
+</script>
+
+<style>
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-draft {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-approved {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-posted {
+    background: #cce5ff;
+    color: #004085;
+}
+
+.status-rejected {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-deleted {
+    background: #e2e3e5;
+    color: #495057;
+}
+</style>
+{% endblock %}

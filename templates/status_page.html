@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - Tweet Manager{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="/campaigns" class="btn btn-secondary">← Back to Campaigns</a>
+    <a href="/" class="btn btn-secondary" style="margin-left: 10px;">🏠 Home</a>
+</div>
+
+<!-- Status Filter Navigation -->
+<div class="card" style="margin-bottom: 20px;">
+    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+        <a href="/drafts" class="btn {{ 'btn-primary' if status == 'Draft' else 'btn-secondary' }}" style="text-decoration: none;">
+            📝 Drafts
+        </a>
+        <a href="/approved" class="btn {{ 'btn-primary' if status == 'Approved' else 'btn-secondary' }}" style="text-decoration: none;">
+            ✅ Approved
+        </a>
+        <a href="/posted" class="btn {{ 'btn-primary' if status == 'Posted' else 'btn-secondary' }}" style="text-decoration: none;">
+            🚀 Posted
+        </a>
+        <a href="/rejected" class="btn {{ 'btn-primary' if status == 'Rejected' else 'btn-secondary' }}" style="text-decoration: none;">
+            ❌ Rejected
+        </a>
+        <a href="/deleted" class="btn {{ 'btn-primary' if status == 'Deleted' else 'btn-secondary' }}" style="text-decoration: none;">
+            🗑️ Deleted
+        </a>
+    </div>
+</div>
+
+<!-- Status Header -->
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">
+        {% if status == 'Draft' %}📝 Draft Tweets
+        {% elif status == 'Approved' %}✅ Approved Tweets
+        {% elif status == 'Posted' %}🚀 Posted Tweets
+        {% elif status == 'Rejected' %}❌ Rejected Tweets
+        {% elif status == 'Deleted' %}🗑️ Deleted Tweets
+        {% endif %}
+    </h3>
+    
+    <div id="statusStats" style="margin-bottom: 20px;">
+        <p style="color: #666;">Loading tweets...</p>
+    </div>
+    
+    <div id="tweetsList">
+        <p style="color: #666; text-align: center;">Loading tweets...</p>
+    </div>
+</div>
+
+<script>
+const currentStatus = '{{ status }}';
+
+// Load tweets by status
+async function loadTweetsByStatus() {
+    try {
+        const response = await fetch(`/api/tweets-by-status/${currentStatus}`);
+        const result = await response.json();
+        
+        const statsContainer = document.getElementById('statusStats');
+        const tweetsContainer = document.getElementById('tweetsList');
+        
+        if (response.ok && result.tweets) {
+            // Update stats
+            statsContainer.innerHTML = `
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 10px; display: inline-block;">
+                    <strong>${result.total}</strong> tweets with status: <strong>${currentStatus}</strong>
+                </div>
+            `;
+            
+            if (result.tweets.length === 0) {
+                tweetsContainer.innerHTML = `
+                    <div style="text-align: center; padding: 40px; color: #666;">
+                        <p>No ${currentStatus.toLowerCase()} tweets found.</p>
+                        <a href="/campaigns" style="color: #667eea;">Go to campaigns</a> to review content.
+                    </div>
+                `;
+                return;
+            }
+            
+            // Display tweets
+            let tweetsHtml = '';
+            result.tweets.forEach(tweet => {
+                const lastModified = tweet.last_modified ? new Date(tweet.last_modified).toLocaleString() : 'Never';
+                const postedDate = tweet.posted_date ? new Date(tweet.posted_date).toLocaleString() : '';
+                
+                tweetsHtml += `
+                    <div class="tweet-card" style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 15px; border-left: 4px solid #667eea;">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                            <div>
+                                <span style="background: #667eea; color: white; padding: 4px 12px; border-radius: 15px; font-size: 0.8rem; font-weight: 500;">
+                                    ${tweet.id}
+                                </span>
+                                <span style="background: #e3f2fd; color: #1976d2; padding: 4px 12px; border-radius: 15px; font-size: 0.8rem; font-weight: 500; margin-left: 10px;">
+                                    ${tweet.type ? tweet.type.replace('_', ' ').toUpperCase() : 'TWEET'}
+                                </span>
+                            </div>
+                            <span class="status-badge status-${tweet.status.toLowerCase()}">${tweet.status}</span>
+                        </div>
+                        
+                        <div style="background: white; padding: 15px; border-radius: 8px; margin-bottom: 15px; border-left: 3px solid #1da1f2;">
+                            <p style="margin: 0; font-size: 1.1rem; line-height: 1.4;">${tweet.content}</p>
+                            <div style="margin-top: 10px; color: #666; font-size: 0.9rem;">
+                                <strong>${tweet.character_count}/280</strong> characters
+                            </div>
+                        </div>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; color: #666;">
+                            <div>
+                                <strong>Campaign:</strong> ${tweet.campaign_batch}<br>
+                                <strong>Last Modified:</strong> ${lastModified}
+                                ${postedDate ? `<br><strong>Posted:</strong> ${postedDate}` : ''}
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <a href="/review/${tweet.campaign_batch}" class="btn btn-primary" style="text-decoration: none; font-size: 0.9rem;">
+                                    📝 Edit
+                                </a>
+                                <button class="btn btn-danger" onclick="deleteTweet('${tweet.campaign_batch}', '${tweet.id}')" style="font-size: 0.9rem;">
+                                    🗑️ Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            tweetsContainer.innerHTML = tweetsHtml;
+        } else {
+            statsContainer.innerHTML = '<p style="color: #dc3545;">Failed to load tweets</p>';
+            tweetsContainer.innerHTML = '<p style="color: #dc3545;">Failed to load tweets</p>';
+        }
+    } catch (error) {
+        console.error('Failed to load tweets:', error);
+        document.getElementById('statusStats').innerHTML = '<p style="color: #dc3545;">Error loading tweets</p>';
+        document.getElementById('tweetsList').innerHTML = '<p style="color: #dc3545;">Error loading tweets</p>';
+    }
+}
+
+// Delete tweet function
+async function deleteTweet(campaignBatch, tweetId) {
+    if (!confirm('Are you sure you want to delete this tweet? This action cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/delete-tweet', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                campaign_batch: campaignBatch,
+                tweet_id: tweetId
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok) {
+            showNotification(result.message, 'success');
+            // Reload the tweets list
+            loadTweetsByStatus();
+        } else {
+            showNotification(result.message, 'error');
+        }
+    } catch (error) {
+        showNotification('Failed to delete tweet', 'error');
+    }
+}
+
+// Load tweets when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    loadTweetsByStatus();
+});
+</script>
+
+<style>
+.status-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-draft {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-approved {
+    background: #d4edda;
+    color: #155724;
+}
+
+.status-posted {
+    background: #cce5ff;
+    color: #004085;
+}
+
+.status-rejected {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-deleted {
+    background: #e2e3e5;
+    color: #495057;
+}
+</style>
+{% endblock %}

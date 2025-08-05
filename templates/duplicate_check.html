@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block title %}Duplicate Tweet Check - CoopHive{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="/" class="btn btn-secondary">← Back to Home</a>
+</div>
+
+<!-- Duplicate Check Upload Section -->
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">🔍 Check Duplicate Tweets</h3>
+    
+    <div style="max-width: 600px; margin: 0 auto; text-align: center;">
+        <p style="font-size: 1.1rem; color: #666; margin-bottom: 30px;">
+            Upload JSON data containing tweets to check for duplicates in the database.
+            This endpoint is designed for n8n workflow integration with authentication.
+        </p>
+        
+        <div style="background: #f8f9fa; padding: 30px; border-radius: 15px; margin-bottom: 30px; border: 2px dashed #667eea;">
+            <input type="file" id="jsonFileInput" accept=".json" style="display: none;" onchange="handleFileSelect(this)">
+            <label for="jsonFileInput" class="btn btn-secondary" style="cursor: pointer; margin-bottom: 15px; font-size: 1.1rem; padding: 15px 30px;">
+                📁 Choose JSON File
+            </label>
+            <div id="selectedFileName" style="color: #666; font-size: 1rem; margin-top: 15px;"></div>
+        </div>
+        
+        <button id="checkBtn" class="btn btn-primary" onclick="checkDuplicates()" disabled style="font-size: 1.1rem; padding: 15px 30px;">
+            🔍 Check for Duplicates
+        </button>
+        
+        <div style="margin-top: 30px; font-size: 0.95rem; color: #666;">
+            <p><strong>Expected format:</strong></p>
+            <ul style="text-align: left; display: inline-block; margin: 15px 0; line-height: 1.6;">
+                <li>Array containing an object with execution_id, source_url, and tweets</li>
+                <li>Each tweet should have "Tweet ID" field for duplicate checking</li>
+                <li>Designed for n8n workflow output format</li>
+                <li>Requires Basic Auth (coophive_ops:testpass123)</li>
+            </ul>
+        </div>
+        
+        <div style="margin-top: 30px; padding: 20px; background: #e8f5e8; border-radius: 10px; border-left: 4px solid #4caf50;">
+            <h4 style="color: #2e7d32; margin-bottom: 10px;">🔐 Secure Endpoint</h4>
+            <p style="color: #2e7d32; margin: 0;">
+                This endpoint uses Basic Authentication and execution ID tracking for security. 
+                Perfect for testing n8n workflow integrations.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Results Section -->
+<div id="resultsSection" class="card" style="margin-top: 30px; display: none;">
+    <h3 style="color: #4caf50; margin-bottom: 20px;">📊 Duplicate Check Results</h3>
+    <div id="resultsContent"></div>
+</div>
+
+<!-- Loading Section -->
+<div id="loadingSection" class="card" style="margin-top: 30px; display: none; text-align: center;">
+    <h3 style="color: #ff9800; margin-bottom: 20px;">⏳ Checking for Duplicates...</h3>
+    <div style="font-size: 1.1rem; color: #666;">
+        Please wait while we check your tweets against the database...
+    </div>
+</div>
+
+<script>
+let selectedFile = null;
+
+function handleFileSelect(input) {
+    const file = input.files[0];
+    if (file) {
+        selectedFile = file;
+        document.getElementById('selectedFileName').innerHTML = `<span style="color: #4caf50; font-weight: bold;">✓ ${file.name}</span>`;
+        document.getElementById('checkBtn').disabled = false;
+    } else {
+        selectedFile = null;
+        document.getElementById('selectedFileName').innerHTML = '';
+        document.getElementById('checkBtn').disabled = true;
+    }
+}
+
+function checkDuplicates() {
+    if (!selectedFile) {
+        alert('Please select a JSON file first.');
+        return;
+    }
+    
+    // Show loading
+    document.getElementById('loadingSection').style.display = 'block';
+    document.getElementById('resultsSection').style.display = 'none';
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            let jsonData = JSON.parse(e.target.result);
+            
+            // Handle different JSON formats
+            let payload;
+            if (Array.isArray(jsonData) && jsonData.length > 0 && jsonData[0].execution_id) {
+                // Already in correct n8n format (like in.json)
+                payload = jsonData;
+            } else if (jsonData.execution_id && jsonData.tweets) {
+                // Direct object format
+                payload = jsonData;
+            } else if (Array.isArray(jsonData) && jsonData.length > 0 && jsonData[0]['Tweet ID']) {
+                // Raw tweets array - wrap it
+                payload = {
+                    execution_id: 'manual_' + Date.now(),
+                    source_url: 'https://manual-upload.local',
+                    tweets: jsonData
+                };
+            } else if (jsonData['Tweet ID']) {
+                // Single tweet object - wrap it
+                payload = {
+                    execution_id: 'manual_' + Date.now(),
+                    source_url: 'https://manual-upload.local',
+                    tweets: [jsonData]
+                };
+            } else {
+                alert('Unsupported JSON format. Please upload data with execution_id, source_url, and tweets fields or direct tweet arrays.');
+                document.getElementById('loadingSection').style.display = 'none';
+                return;
+            }
+            
+            // Make API call with Basic Auth
+            fetch('/api/check-duplicate-tweet', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Basic ' + btoa('coophive_ops:testpass123'),
+                    'X-Execution-ID': payload.execution_id || 'manual_' + Date.now()
+                },
+                body: JSON.stringify(payload)
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('loadingSection').style.display = 'none';
+                displayResults(data);
+            })
+            .catch(error => {
+                document.getElementById('loadingSection').style.display = 'none';
+                console.error('Error:', error);
+                alert('Error checking duplicates. Please check the console for details.');
+            });
+        } catch (error) {
+            document.getElementById('loadingSection').style.display = 'none';
+            alert('Invalid JSON file. Please check the file format.');
+        }
+    };
+    reader.readAsText(selectedFile);
+}
+
+function displayResults(data) {
+    const resultsContent = document.getElementById('resultsContent');
+    
+    if (data.status === 'success' || data.status === 'warning') {
+        // Use the enhanced response structure
+        const summary = data.summary || {};
+        const totalTweets = summary.total_processed || 0;
+        const duplicatesFound = summary.duplicates_found || 0;
+        const newTweets = summary.new_tweets_found || 0;
+        const savedCount = summary.saved_to_database || 0;
+        const executionDupes = summary.execution_id_duplicates || 0;
+        
+        // Show notification at the top
+        showNotification(data.message, data.status);
+        
+        resultsContent.innerHTML = `
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px;">
+                <div style="background: #e3f2fd; padding: 20px; border-radius: 10px; text-align: center;">
+                    <h4 style="color: #1976d2; margin: 0 0 10px 0; font-size: 2rem;">${totalTweets}</h4>
+                    <p style="color: #1976d2; margin: 0; font-weight: bold;">Total Processed</p>
+                </div>
+                <div style="background: #fff3e0; padding: 20px; border-radius: 10px; text-align: center;">
+                    <h4 style="color: #f57c00; margin: 0 0 10px 0; font-size: 2rem;">${duplicatesFound}</h4>
+                    <p style="color: #f57c00; margin: 0; font-weight: bold;">Duplicates Found</p>
+                </div>
+                <div style="background: #e8f5e8; padding: 20px; border-radius: 10px; text-align: center;">
+                    <h4 style="color: #388e3c; margin: 0 0 10px 0; font-size: 2rem;">${newTweets}</h4>
+                    <p style="color: #388e3c; margin: 0; font-weight: bold;">New Tweets</p>
+                </div>
+                <div style="background: #e1f5fe; padding: 20px; border-radius: 10px; text-align: center;">
+                    <h4 style="color: #0277bd; margin: 0 0 10px 0; font-size: 2rem;">${savedCount}</h4>
+                    <p style="color: #0277bd; margin: 0; font-weight: bold;">Saved to DB</p>
+                </div>
+            </div>
+            
+            <!-- Enhanced Status Message -->
+            <div style="background: ${getStatusColor(data.status).bg}; padding: 20px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid ${getStatusColor(data.status).border};">
+                <h4 style="color: ${getStatusColor(data.status).text}; margin-bottom: 10px;">${getStatusIcon(data.status)} ${data.status.toUpperCase()}</h4>
+                <p style="color: ${getStatusColor(data.status).text}; margin: 0; font-weight: bold; font-size: 1.1rem;">${data.message}</p>
+                
+                ${executionDupes > 0 ? `
+                <div style="margin-top: 15px; padding: 10px; background: rgba(255,255,255,0.3); border-radius: 5px;">
+                    <small style="color: ${getStatusColor(data.status).text};">
+                        🔄 <strong>${executionDupes}</strong> duplicates found by execution_id matching, 
+                        <strong>${duplicatesFound - executionDupes}</strong> by Tweet ID matching
+                    </small>
+                </div>
+                ` : ''}
+            </div>
+            
+            ${data.data && data.data.execution_id ? `
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                <strong>Execution ID:</strong> <code style="background: #e0e0e0; padding: 2px 6px; border-radius: 3px;">${data.data.execution_id}</code>
+                ${data.data.source_url ? `<br><strong>Source:</strong> <a href="${data.data.source_url}" target="_blank">${data.data.source_url}</a>` : ''}
+            </div>
+            ` : ''}
+            
+            ${duplicatesFound > 0 && data.data && data.data.duplicate_ids ? `
+            <div style="background: #fff3e0; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                <h4 style="color: #f57c00; margin-bottom: 15px;">⚠️ Duplicate Tweet IDs Found (${duplicatesFound}):</h4>
+                <div style="max-height: 200px; overflow-y: auto; font-family: monospace; color: #666; background: #f9f9f9; padding: 10px; border-radius: 5px;">
+                    ${data.data.duplicate_ids.map(id => `<div style="padding: 2px 0;">${id}</div>`).join('')}
+                </div>
+            </div>
+            ` : ''}
+            
+            ${newTweets > 0 && data.data && data.data.new_tweets ? `
+            <div style="background: #e8f5e8; padding: 20px; border-radius: 10px;">
+                <h4 style="color: #388e3c; margin-bottom: 15px;">✅ New Tweets Sample (First 3 of ${newTweets}):</h4>
+                <div style="max-height: 300px; overflow-y: auto;">
+                    ${data.data.new_tweets.slice(0, 3).map(tweet => `
+                    <div style="background: white; padding: 15px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid #4caf50;">
+                        <strong>ID:</strong> <code style="background: #e8f5e8; padding: 1px 4px; border-radius: 3px;">${tweet['Tweet ID'] || 'N/A'}</code><br>
+                        <strong>Content:</strong> ${(tweet.Content || '').substring(0, 150)}${(tweet.Content || '').length > 150 ? '...' : ''}<br>
+                        <strong>Date:</strong> ${tweet.Date || 'N/A'}
+                        ${tweet.Likes ? `<br><strong>Engagement:</strong> ${tweet.Likes} likes, ${tweet.Retweets || 0} retweets` : ''}
+                    </div>
+                    `).join('')}
+                </div>
+            </div>
+            ` : ''}
+            
+            ${data.errors && data.errors.length > 0 ? `
+            <div style="background: #ffebee; padding: 20px; border-radius: 10px; margin-top: 20px;">
+                <h4 style="color: #c62828; margin-bottom: 15px;">❌ Errors (${data.errors.length}):</h4>
+                <div style="max-height: 200px; overflow-y: auto; font-family: monospace; color: #c62828; background: #f9f9f9; padding: 10px; border-radius: 5px;">
+                    ${data.errors.map(error => `<div style="padding: 2px 0;">${error}</div>`).join('')}
+                </div>
+            </div>
+            ` : ''}
+        `;
+    } else {
+        showNotification(data.message || 'Unknown error occurred', 'error');
+        resultsContent.innerHTML = `
+            <div style="background: #ffebee; padding: 20px; border-radius: 10px; text-align: center;">
+                <h4 style="color: #c62828; margin-bottom: 15px;">❌ Error</h4>
+                <p style="color: #c62828; margin: 0; font-size: 1.1rem;">${data.message || 'Unknown error occurred'}</p>
+            </div>
+        `;
+    }
+    
+    document.getElementById('resultsSection').style.display = 'block';
+}
+
+function getStatusColor(status) {
+    switch(status) {
+        case 'success':
+            return { bg: '#e8f5e8', text: '#2e7d32', border: '#4caf50' };
+        case 'warning':
+            return { bg: '#fff3e0', text: '#f57c00', border: '#ff9800' };
+        case 'error':
+            return { bg: '#ffebee', text: '#c62828', border: '#f44336' };
+        default:
+            return { bg: '#f5f5f5', text: '#666', border: '#ccc' };
+    }
+}
+
+function getStatusIcon(status) {
+    switch(status) {
+        case 'success': return '✅';
+        case 'warning': return '⚠️';
+        case 'error': return '❌';
+        default: return 'ℹ️';
+    }
+}
+
+function showNotification(message, type) {
+    // Create or update notification element
+    let notification = document.getElementById('notification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'notification';
+        notification.style.position = 'fixed';
+        notification.style.top = '20px';
+        notification.style.right = '20px';
+        notification.style.zIndex = '9999';
+        notification.style.maxWidth = '400px';
+        notification.style.padding = '15px 20px';
+        notification.style.borderRadius = '8px';
+        notification.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+        notification.style.fontWeight = 'bold';
+        notification.style.cursor = 'pointer';
+        document.body.appendChild(notification);
+        
+        notification.onclick = function() {
+            notification.style.display = 'none';
+        };
+    }
+    
+    const colors = getStatusColor(type);
+    notification.style.backgroundColor = colors.bg;
+    notification.style.color = colors.text;
+    notification.style.border = `1px solid ${colors.border}`;
+    notification.innerHTML = `${getStatusIcon(type)} ${message}`;
+    notification.style.display = 'block';
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        if (notification) {
+            notification.style.display = 'none';
+        }
+    }, 5000);
+}
+</script>
+
+{% endblock %}

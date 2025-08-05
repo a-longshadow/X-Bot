@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Boolean, JSON
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Boolean, JSON, inspect
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -7,9 +7,20 @@ import json
 
 Base = declarative_base()
 
+# Database version for migration tracking
+CURRENT_DB_VERSION = 2
+
 # Global engine and session factory for connection reuse
 _engine = None
 _Session = None
+
+class DatabaseVersion(Base):
+    __tablename__ = 'database_version'
+    
+    id = Column(Integer, primary_key=True)
+    version = Column(Integer, default=CURRENT_DB_VERSION)
+    updated_at = Column(DateTime, default=datetime.utcnow)
+    migration_notes = Column(Text)
 
 class Campaign(Base):
     __tablename__ = 'campaigns'
@@ -42,6 +53,25 @@ class Tweet(Base):
     posted_date = Column(DateTime)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+class ScrapedTweet(Base):
+    __tablename__ = 'scraped_tweets'
+    
+    tweet_id = Column(String(50), primary_key=True)  # Maps to "Tweet ID"
+    url = Column(Text)                                # Maps to "URL"
+    content = Column(Text)                           # Maps to "Content"
+    likes = Column(Integer, default=0)               # Maps to "Likes"
+    retweets = Column(Integer, default=0)            # Maps to "Retweets"
+    replies = Column(Integer, default=0)             # Maps to "Replies"  
+    quotes = Column(Integer, default=0)              # Maps to "Quotes"
+    views = Column(Integer, default=0)               # Maps to "Views"
+    date = Column(DateTime)                          # Maps to "Date"
+    status = Column(String(20), default='success')  # Maps to "Status"
+    tweet_url = Column(Text)                         # Maps to "Tweet"
+    execution_id = Column(String(100))               # N8N execution tracking
+    source_url = Column(String(200))                 # N8N source URL
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 def get_database_url():
     """Get database URL from environment or use SQLite for local development"""
     if os.environ.get('DATABASE_URL'):
@@ -54,24 +84,133 @@ def get_database_url():
     else:
         return 'sqlite:///tweets.db'
 
+def get_database_version():
+    """Get current database version"""
+    global _engine
+    if _engine is None:
+        return 0
+    
+    # Check if database_version table exists
+    inspector = inspect(_engine)
+    if 'database_version' not in inspector.get_table_names():
+        return 0
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    try:
+        version_record = session.query(DatabaseVersion).first()
+        if version_record:
+            return version_record.version
+        return 0
+    except Exception:
+        return 0
+    finally:
+        session.close()
+
+def set_database_version(version, notes=""):
+    """Set database version"""
+    global _engine
+    if _engine is None:
+        return False
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    try:
+        # Delete existing version records
+        session.query(DatabaseVersion).delete()
+        
+        # Create new version record
+        version_record = DatabaseVersion(
+            version=version,
+            updated_at=datetime.utcnow(),
+            migration_notes=notes
+        )
+        session.add(version_record)
+        session.commit()
+        print(f"DEBUG: Database version set to {version}: {notes}")
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"DEBUG: Failed to set database version: {e}")
+        return False
+    finally:
+        session.close()
+
+def migrate_database():
+    """Perform database migrations"""
+    global _engine
+    if _engine is None:
+        return False
+    
+    current_version = get_database_version()
+    print(f"DEBUG: Current database version: {current_version}, Target version: {CURRENT_DB_VERSION}")
+    
+    if current_version == CURRENT_DB_VERSION:
+        print("DEBUG: Database is up to date")
+        return True
+    
+    if current_version == 0:
+        print("DEBUG: Fresh database - creating all tables")
+        Base.metadata.create_all(_engine)
+        set_database_version(CURRENT_DB_VERSION, "Initial database creation")
+        return True
+    
+    # Perform incremental migrations
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    
+    try:
+        if current_version < 2:
+            print("DEBUG: Migrating to version 2 - Enhanced scraped tweets schema")
+            
+            # Check if scraped_tweets table exists, if not create it
+            inspector = inspect(_engine)
+            if 'scraped_tweets' not in inspector.get_table_names():
+                print("DEBUG: Creating scraped_tweets table")
+                ScrapedTweet.__table__.create(_engine)
+            else:
+                print("DEBUG: scraped_tweets table already exists")
+            
+            # Update version
+            set_database_version(2, "Added scraped_tweets table with enhanced duplicate checking")
+        
+        # Add more migration steps here as needed
+        # if current_version < 3:
+        #     # Migration to version 3
+        #     pass
+        
+        session.commit()
+        print(f"DEBUG: Database migration completed - now at version {CURRENT_DB_VERSION}")
+        return True
+        
+    except Exception as e:
+        session.rollback()
+        print(f"DEBUG: Database migration failed: {e}")
+        return False
+    finally:
+        session.close()
+
 def init_database():
-    """Initialize database connection and create tables"""
+    """Initialize database connection and perform migrations"""
     global _engine, _Session
     database_url = get_database_url()
     
-    # For SQLite only, remove the old database file to ensure clean schema
-    # Don't do this for PostgreSQL in production
-    if database_url.startswith('sqlite:///'):
-        db_file = database_url.replace('sqlite:///', '')
-        if os.path.exists(db_file):
-            print(f"DEBUG: Removing old database file: {db_file}")
-            os.remove(db_file)
+    print(f"DEBUG: Initializing database with URL: {database_url}")
     
+    # Create engine
     _engine = create_engine(database_url, echo=False, pool_recycle=3600)
-    Base.metadata.create_all(_engine)
-    _Session = sessionmaker(bind=_engine, autoflush=True)
-    print(f"DEBUG: Database initialized with URL: {database_url}")
-    return _engine
+    
+    # Create minimal tables needed for version checking
+    DatabaseVersion.__table__.create(_engine, checkfirst=True)
+    
+    # Perform migrations
+    if migrate_database():
+        _Session = sessionmaker(bind=_engine, autoflush=True)
+        print(f"DEBUG: Database initialized successfully at version {CURRENT_DB_VERSION}")
+        return _engine
+    else:
+        print("DEBUG: Database migration failed")
+        return None
 
 def get_session():
     """Get database session"""
@@ -270,4 +409,338 @@ def update_tweet_status(campaign_batch, tweet_id, new_status):
         print(f"Database error: {e}")
         return False
     finally:
-        session.close() 
+        session.close()
+
+# ============================================================================
+# SCRAPED TWEETS MANAGEMENT FUNCTIONS
+# ============================================================================
+
+def check_duplicate_scraped_tweets(tweet_ids, execution_id=None):
+    """
+    Check which tweet IDs already exist in the scraped_tweets table
+    IMPROVED LOGIC: Check execution_id first, then Tweet ID
+    
+    Args:
+        tweet_ids: List of tweet IDs to check
+        execution_id: Optional execution ID to check for duplicates within same execution
+    
+    Returns: (existing_ids, new_ids)
+    """
+    global _engine
+    if _engine is None:
+        init_database()
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    try:
+        existing_ids = set()
+        
+        # Initialize tracking variables
+        execution_duplicate_ids = set()
+        tweet_duplicate_ids = set()
+        
+        # STEP 1: Check for duplicate execution_id (if provided)
+        if execution_id:
+            execution_duplicates = session.query(ScrapedTweet.tweet_id).filter(
+                ScrapedTweet.execution_id == execution_id
+            ).all()
+            execution_duplicate_ids = {tweet.tweet_id for tweet in execution_duplicates}
+            
+            if execution_duplicate_ids:
+                print(f"DEBUG: Found {len(execution_duplicate_ids)} tweets with same execution_id: {execution_id}")
+                existing_ids.update(execution_duplicate_ids)
+        
+        # STEP 2: Check for duplicate Tweet IDs (global check)
+        tweet_id_duplicates = session.query(ScrapedTweet.tweet_id).filter(
+            ScrapedTweet.tweet_id.in_(tweet_ids)
+        ).all()
+        tweet_duplicate_ids = {tweet.tweet_id for tweet in tweet_id_duplicates}
+        
+        if tweet_duplicate_ids:
+            print(f"DEBUG: Found {len(tweet_duplicate_ids)} tweets with duplicate Tweet IDs")
+            existing_ids.update(tweet_duplicate_ids)
+        
+        # Calculate new tweet IDs
+        new_ids = [tid for tid in tweet_ids if tid not in existing_ids]
+        
+        print(f"DEBUG: Checked {len(tweet_ids)} tweets - {len(existing_ids)} duplicates, {len(new_ids)} new")
+        print(f"DEBUG: Execution duplicates: {len(execution_duplicate_ids)}, Tweet ID duplicates: {len(tweet_duplicate_ids)}")
+        
+        return list(existing_ids), new_ids
+        
+    except Exception as e:
+        print(f"Database error checking duplicates: {e}")
+        return [], tweet_ids  # Return all as new if error
+    finally:
+        session.close()
+
+def save_scraped_tweets(tweets_data, execution_id, source_url):
+    """
+    Save scraped tweets to database
+    tweets_data: List of tweet dictionaries from n8n
+    Returns: (success_count, error_count, errors)
+    """
+    global _engine
+    if _engine is None:
+        init_database()
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    success_count = 0
+    error_count = 0
+    errors = []
+    
+    try:
+        for tweet_data in tweets_data:
+            try:
+                # Parse the date string from Twitter API
+                tweet_date = None
+                if tweet_data.get('Date'):
+                    try:
+                        # Parse Twitter date format: "Mon Aug 04 17:15:25 +0000 2025"
+                        tweet_date = datetime.strptime(tweet_data['Date'], "%a %b %d %H:%M:%S %z %Y")
+                    except ValueError as e:
+                        print(f"Date parse error for tweet {tweet_data.get('Tweet ID')}: {e}")
+                        tweet_date = datetime.utcnow()
+                
+                # Create ScrapedTweet object
+                scraped_tweet = ScrapedTweet(
+                    tweet_id=tweet_data['Tweet ID'],
+                    url=tweet_data.get('URL', ''),
+                    content=tweet_data.get('Content', ''),
+                    likes=int(tweet_data.get('Likes', 0)),
+                    retweets=int(tweet_data.get('Retweets', 0)),
+                    replies=int(tweet_data.get('Replies', 0)),
+                    quotes=int(tweet_data.get('Quotes', 0)),
+                    views=int(tweet_data.get('Views', 0)),
+                    date=tweet_date,
+                    status=tweet_data.get('Status', 'success'),
+                    tweet_url=tweet_data.get('Tweet', ''),
+                    execution_id=execution_id,
+                    source_url=source_url
+                )
+                
+                session.add(scraped_tweet)
+                success_count += 1
+                
+            except Exception as e:
+                error_count += 1
+                error_msg = f"Error saving tweet {tweet_data.get('Tweet ID', 'unknown')}: {str(e)}"
+                errors.append(error_msg)
+                print(f"DEBUG: {error_msg}")
+        
+        # Commit all successfully created tweets
+        if success_count > 0:
+            session.commit()
+            print(f"DEBUG: Successfully saved {success_count} scraped tweets")
+        
+        return success_count, error_count, errors
+        
+    except Exception as e:
+        session.rollback()
+        print(f"Database error saving scraped tweets: {e}")
+        return 0, len(tweets_data), [f"Database error: {str(e)}"]
+    finally:
+        session.close()
+
+def get_scraped_tweets(limit=None, offset=None, execution_id=None):
+    """
+    Retrieve scraped tweets from database with enhanced pagination support
+    Returns: Tuple of (tweets_data, total_count)
+    """
+    global _engine
+    if _engine is None:
+        init_database()
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    try:
+        # Base query
+        query = session.query(ScrapedTweet)
+        
+        if execution_id:
+            query = query.filter(ScrapedTweet.execution_id == execution_id)
+        
+        # Get total count before applying limit/offset
+        total_count = query.count()
+        
+        # Order by date descending (newest first), then by created_at for consistency
+        query = query.order_by(ScrapedTweet.date.desc(), ScrapedTweet.created_at.desc())
+        
+        if offset:
+            query = query.offset(offset)
+        if limit:
+            query = query.limit(limit)
+        
+        tweets = query.all()
+        
+        # Convert to dictionary format with enhanced data
+        tweets_data = []
+        for tweet in tweets:
+            # Format the date for better display
+            formatted_date = None
+            if tweet.date:
+                try:
+                    formatted_date = tweet.date.strftime("%Y-%m-%d %H:%M:%S")
+                except:
+                    formatted_date = str(tweet.date)
+            
+            tweets_data.append({
+                'Tweet ID': tweet.tweet_id,
+                'URL': tweet.url,
+                'Content': tweet.content,
+                'Likes': tweet.likes,
+                'Retweets': tweet.retweets,
+                'Replies': tweet.replies,
+                'Quotes': tweet.quotes,
+                'Views': tweet.views,
+                'Date': formatted_date,
+                'Status': tweet.status,
+                'Tweet': tweet.tweet_url,
+                'execution_id': tweet.execution_id,
+                'source_url': tweet.source_url,
+                'created_at': tweet.created_at.strftime("%Y-%m-%d %H:%M:%S") if tweet.created_at else None,
+                'engagement_total': tweet.likes + tweet.retweets + tweet.replies + tweet.quotes
+            })
+        
+        return tweets_data, total_count
+        
+    except Exception as e:
+        print(f"Database error retrieving scraped tweets: {e}")
+        return [], 0
+    finally:
+        session.close()
+
+def get_scraped_tweets_stats():
+    """Get statistics about scraped tweets"""
+    global _engine
+    if _engine is None:
+        init_database()
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    try:
+        from sqlalchemy import func
+        
+        # Basic counts
+        total_tweets = session.query(ScrapedTweet).count()
+        
+        # Engagement stats
+        engagement_stats = session.query(
+            func.sum(ScrapedTweet.likes).label('total_likes'),
+            func.sum(ScrapedTweet.retweets).label('total_retweets'),
+            func.sum(ScrapedTweet.replies).label('total_replies'),
+            func.sum(ScrapedTweet.views).label('total_views'),
+            func.avg(ScrapedTweet.likes).label('avg_likes')
+        ).first()
+        
+        # Date range
+        date_range = session.query(
+            func.min(ScrapedTweet.date).label('earliest'),
+            func.max(ScrapedTweet.date).label('latest')
+        ).first()
+        
+        # Execution stats
+        execution_count = session.query(func.count(func.distinct(ScrapedTweet.execution_id))).scalar()
+        
+        return {
+            'total_tweets': total_tweets,
+            'total_likes': engagement_stats.total_likes or 0,
+            'total_retweets': engagement_stats.total_retweets or 0,
+            'total_replies': engagement_stats.total_replies or 0,
+            'total_views': engagement_stats.total_views or 0,
+            'avg_likes': round(engagement_stats.avg_likes or 0, 2),
+            'earliest_date': date_range.earliest,
+            'latest_date': date_range.latest,
+            'execution_count': execution_count
+        }
+        
+    except Exception as e:
+        print(f"Database error getting scraped tweet stats: {e}")
+        return {
+            'total_tweets': 0,
+            'total_likes': 0,
+            'total_retweets': 0,
+            'total_replies': 0,
+            'total_views': 0,
+            'avg_likes': 0,
+            'earliest_date': None,
+            'latest_date': None,
+            'execution_count': 0
+        }
+    finally:
+        session.close()
+
+# ============================================================================
+# DATABASE MANAGEMENT UTILITIES
+# ============================================================================
+
+def get_database_status():
+    """Get comprehensive database status information"""
+    global _engine
+    if _engine is None:
+        return {
+            'status': 'disconnected',
+            'version': 0,
+            'target_version': CURRENT_DB_VERSION,
+            'tables': [],
+            'message': 'Database not initialized'
+        }
+    
+    try:
+        inspector = inspect(_engine)
+        tables = inspector.get_table_names()
+        current_version = get_database_version()
+        
+        return {
+            'status': 'connected',
+            'version': current_version,
+            'target_version': CURRENT_DB_VERSION,
+            'needs_migration': current_version != CURRENT_DB_VERSION,
+            'tables': tables,
+            'database_url': get_database_url(),
+            'message': f'Database version {current_version} of {CURRENT_DB_VERSION}'
+        }
+    except Exception as e:
+        return {
+            'status': 'error',
+            'version': 0,
+            'target_version': CURRENT_DB_VERSION,
+            'tables': [],
+            'message': f'Database error: {str(e)}'
+        }
+
+def force_migration():
+    """Force database migration - use with caution"""
+    global _engine
+    if _engine is None:
+        print("DEBUG: Cannot migrate - database not initialized")
+        return False
+    
+    print("DEBUG: Forcing database migration...")
+    return migrate_database()
+
+def backup_database(backup_path=None):
+    """Create a backup of SQLite database (SQLite only)"""
+    database_url = get_database_url()
+    
+    if not database_url.startswith('sqlite:///'):
+        return False, "Backup only supported for SQLite databases"
+    
+    import shutil
+    from datetime import datetime
+    
+    try:
+        db_file = database_url.replace('sqlite:///', '')
+        if not os.path.exists(db_file):
+            return False, "Database file does not exist"
+        
+        if backup_path is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_path = f"tweets_backup_{timestamp}.db"
+        
+        shutil.copy2(db_file, backup_path)
+        return True, f"Database backed up to {backup_path}"
+        
+    except Exception as e:
+        return False, f"Backup failed: {str(e)}" 

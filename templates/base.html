@@ -48,6 +48,129 @@
             background-clip: text;
         }
 
+        /* Navigation Bar */
+        .navbar {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 15px 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            animation: slideDown 0.6s ease-out;
+        }
+
+        .navbar-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        .navbar-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #667eea;
+            text-decoration: none;
+        }
+
+        .navbar-brand:hover {
+            color: #5a6fd8;
+        }
+
+        .navbar-menu {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .navbar-section {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .navbar-divider {
+            width: 1px;
+            height: 20px;
+            background: #e0e0e0;
+            margin: 0 5px;
+        }
+
+        .nav-link {
+            color: #495057;
+            text-decoration: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .nav-link:hover {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .nav-link.active {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .nav-link.danger:hover {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a52);
+        }
+
+        .nav-link.success:hover {
+            background: linear-gradient(135deg, #51cf66, #40c057);
+        }
+
+        .mobile-menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #667eea;
+        }
+
+        @media (max-width: 768px) {
+            .navbar-menu {
+                display: none;
+                width: 100%;
+                flex-direction: column;
+                gap: 10px;
+                margin-top: 15px;
+            }
+
+            .navbar-menu.active {
+                display: flex;
+            }
+
+            .mobile-menu-toggle {
+                display: block;
+            }
+
+            .navbar-section {
+                width: 100%;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+
+            .navbar-divider {
+                display: none;
+            }
+        }
+
         .header p {
             color: #666;
             font-size: 1.1rem;
@@ -261,6 +384,54 @@
             <p>Content Review System</p>
         </div>
         
+        <!-- Navigation Bar -->
+        <nav class="navbar">
+            <div class="navbar-content">
+                <a href="/" class="navbar-brand">
+                    🏠 Home
+                </a>
+                
+                <button class="mobile-menu-toggle" onclick="toggleMobileMenu()">
+                    ☰
+                </button>
+                
+                <div class="navbar-menu" id="navbarMenu">
+                    <!-- Content Management -->
+                    <div class="navbar-section">
+                        <a href="/duplicate-check" class="nav-link">🔍 Check Duplicates</a>
+                        <a href="/campaigns" class="nav-link">📋 Campaigns</a>
+                        <a href="/upload" class="nav-link">📁 Upload</a>
+                    </div>
+                    
+                    <div class="navbar-divider"></div>
+                    
+                    <!-- Status Views -->
+                    <div class="navbar-section">
+                        <a href="/drafts" class="nav-link">📝 Drafts</a>
+                        <a href="/approved" class="nav-link">✅ Approved</a>
+                        <a href="/posted" class="nav-link">🚀 Posted</a>
+                        <a href="/rejected" class="nav-link danger">❌ Rejected</a>
+                    </div>
+                    
+                    <div class="navbar-divider"></div>
+                    
+                    <!-- Data & Analytics -->
+                    <div class="navbar-section">
+                        <a href="/all-tweets" class="nav-link">📊 All Tweets</a>
+                        <a href="/scraped-tweets" class="nav-link">📈 Scraped Data</a>
+                    </div>
+                    
+                    <div class="navbar-divider"></div>
+                    
+                    <!-- System -->
+                    <div class="navbar-section">
+                        <a href="/status" class="nav-link">🔧 Status</a>
+                        <a href="/database-admin" class="nav-link success">🗄️ Database</a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+        
         {% block content %}{% endblock %}
     </div>
 
@@ -292,6 +463,12 @@
                 button.disabled = false;
                 button.innerHTML = button.dataset.originalText || 'Submit';
             }
+        }
+
+        // Mobile menu toggle
+        function toggleMobileMenu() {
+            const menu = document.getElementById('navbarMenu');
+            menu.classList.toggle('active');
         }
 
         // API helper

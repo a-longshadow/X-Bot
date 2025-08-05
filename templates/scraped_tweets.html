@@ -1,0 +1,1097 @@
+{% extends "base.html" %}
+
+{% block title %}Scraped Tweets Database - CoopHive{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="/" class="btn btn-secondary">← Back to Home</a>
+</div>
+
+<!-- Stats Dashboard Card -->
+<div class="stats-dashboard-card">
+    <div class="dashboard-header">
+        <h3>📈 Database Overview</h3>
+        <p>Real-time statistics from your scraped tweets</p>
+    </div>
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">📊</div>
+            <div class="stat-value">{{ "{:,}".format(stats.total_tweets) }}</div>
+            <div class="stat-label">Total Tweets</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">❤️</div>
+            <div class="stat-value">{{ "{:,}".format(stats.total_likes) }}</div>
+            <div class="stat-label">Total Likes</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">🔄</div>
+            <div class="stat-value">{{ "{:,}".format(stats.total_retweets) }}</div>
+            <div class="stat-label">Total Retweets</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">👁️</div>
+            <div class="stat-value">{{ "{:,}".format(stats.total_views) }}</div>
+            <div class="stat-label">Total Views</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">🚀</div>
+            <div class="stat-value">{{ stats.execution_count }}</div>
+            <div class="stat-label">Executions</div>
+        </div>
+    </div>
+</div>
+
+<!-- Page Header -->
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+        <div>
+            <h3 style="color: #667eea; margin: 0;">📋 Scraped Tweets Database</h3>
+            <p style="color: #666; margin: 5px 0 0 0;">
+                Showing {{ pagination.start_index }}-{{ pagination.end_index }} of {{ "{:,}".format(pagination.total) }} tweets
+                {% if execution_id %} (filtered by execution: {{ execution_id }}){% endif %}
+            </p>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button onclick="exportPageToCSV()" class="btn btn-success" title="Export current page to CSV">
+                📥 Export Page
+            </button>
+            <a href="/api/export-scraped-tweets-csv" class="btn btn-success" title="Export all scraped tweets to CSV" style="text-decoration: none;">
+                📊 Export All CSV
+            </a>
+            <button onclick="toggleFilters()" class="btn btn-secondary" id="filterToggle">
+                🔍 Filters
+            </button>
+            <button onclick="refreshData()" class="btn btn-primary">
+                🔄 Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Filters Section -->
+    <div id="filtersSection" style="display: none; background: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+        <h4 style="margin-bottom: 15px; color: #495057;">Filter Options</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Execution ID:</label>
+                <input type="text" id="executionFilter" placeholder="Filter by execution ID..." 
+                       value="{{ execution_id or '' }}" 
+                       style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Quick Actions:</label>
+                <div style="display: flex; gap: 8px;">
+                    <button onclick="clearFilters()" class="btn btn-secondary btn-sm">Clear</button>
+                    <button onclick="applyFilters()" class="btn btn-primary btn-sm">Apply</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Excel-like Table -->
+    <div class="table-container">
+        <table class="excel-table" id="tweetsTable">
+            <thead>
+                <tr>
+                    <th class="col-index">#</th>
+                    <th class="col-tweet-id" data-sort="Tweet ID">Tweet ID</th>
+                    <th class="col-content" data-sort="Content">Content</th>
+                    <th class="col-date" data-sort="Date">Date</th>
+                    <th class="col-engagement">Engagement</th>
+                    <th class="col-stats">Stats</th>
+                    <th class="col-actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for tweet in tweets %}
+                <tr class="tweet-row" data-tweet-id="{{ tweet['Tweet ID'] }}">
+                    <td class="col-index">{{ pagination.start_index + loop.index0 }}</td>
+                    <td class="col-tweet-id">
+                        <div class="tweet-id-cell">
+                            <span class="tweet-id-text">{{ tweet['Tweet ID'] }}</span>
+                            <button onclick="copyToClipboard('{{ tweet['Tweet ID'] }}')" class="copy-btn" title="Copy Tweet ID">📋</button>
+                        </div>
+                    </td>
+                    <td class="col-content">
+                        <div class="content-cell">
+                            <div class="content-preview">{{ tweet['Content'][:100] }}{% if tweet['Content']|length > 100 %}...{% endif %}</div>
+                            {% if tweet['Content']|length > 100 %}
+                            <button onclick="toggleContent(this)" class="expand-btn" data-full-content="{{ tweet['Content'] }}">Show More</button>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td class="col-date">
+                        <div class="date-cell">
+                            <div class="date-primary">{{ tweet['Date'][:10] if tweet['Date'] else 'N/A' }}</div>
+                            <div class="date-time">{{ tweet['Date'][11:19] if tweet['Date'] and tweet['Date']|length > 10 else '' }}</div>
+                        </div>
+                    </td>
+                    <td class="col-engagement">
+                        <div class="engagement-cell">
+                            <div class="engagement-item">
+                                <span class="engagement-icon">❤️</span>
+                                <span class="engagement-value">{{ "{:,}".format(tweet['Likes']) }}</span>
+                            </div>
+                            <div class="engagement-item">
+                                <span class="engagement-icon">🔄</span>
+                                <span class="engagement-value">{{ "{:,}".format(tweet['Retweets']) }}</span>
+                            </div>
+                            <div class="engagement-item">
+                                <span class="engagement-icon">💬</span>
+                                <span class="engagement-value">{{ "{:,}".format(tweet['Replies']) }}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="col-stats">
+                        <div class="stats-cell">
+                            <div class="stat-item">
+                                <span class="stat-label">Views:</span>
+                                <span class="stat-value">{{ "{:,}".format(tweet['Views']) }}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">Total:</span>
+                                <span class="stat-value">{{ "{:,}".format(tweet['engagement_total']) }}</span>
+                            </div>
+                        </div>
+                    </td>
+                    <td class="col-actions">
+                        <div class="actions-cell">
+                            <a href="{{ tweet['URL'] }}" target="_blank" class="action-btn" title="View on X/Twitter">🔗</a>
+                            <button onclick="showTweetDetails('{{ tweet['Tweet ID'] }}')" class="action-btn" title="Show Details">ℹ️</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        {% if not tweets %}
+        <div class="empty-state">
+            <div class="empty-icon">📭</div>
+            <h3>No Tweets Found</h3>
+            <p>No scraped tweets match your current filters.</p>
+            {% if execution_id %}
+            <button onclick="clearFilters()" class="btn btn-primary">Clear Filters</button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Pagination -->
+    {% if pagination.pages > 1 %}
+    <div class="pagination-container">
+        <div class="pagination-info">
+            Page {{ pagination.page }} of {{ pagination.pages }}
+        </div>
+        <div class="pagination-controls">
+            {% if pagination.has_prev %}
+            <a href="?page=1{% if execution_id %}&execution_id={{ execution_id }}{% endif %}" class="pagination-btn" title="First Page">⏪</a>
+            <a href="?page={{ pagination.prev_num }}{% if execution_id %}&execution_id={{ execution_id }}{% endif %}" class="pagination-btn" title="Previous Page">◀️</a>
+            {% endif %}
+            
+            <!-- Page numbers -->
+            {% set start_page = [1, pagination.page - 2]|max %}
+            {% set end_page = [pagination.pages, pagination.page + 2]|min %}
+            
+            {% if start_page > 1 %}
+            <a href="?page=1{% if execution_id %}&execution_id={{ execution_id }}{% endif %}" class="pagination-btn">1</a>
+            {% if start_page > 2 %}
+            <span class="pagination-ellipsis">...</span>
+            {% endif %}
+            {% endif %}
+            
+            {% for page_num in range(start_page, end_page + 1) %}
+            {% if page_num == pagination.page %}
+            <span class="pagination-btn pagination-active">{{ page_num }}</span>
+            {% else %}
+            <a href="?page={{ page_num }}{% if execution_id %}&execution_id={{ execution_id }}{% endif %}" class="pagination-btn">{{ page_num }}</a>
+            {% endif %}
+            {% endfor %}
+            
+            {% if end_page < pagination.pages %}
+            {% if end_page < pagination.pages - 1 %}
+            <span class="pagination-ellipsis">...</span>
+            {% endif %}
+            <a href="?page={{ pagination.pages }}{% if execution_id %}&execution_id={{ execution_id }}{% endif %}" class="pagination-btn">{{ pagination.pages }}</a>
+            {% endif %}
+            
+            {% if pagination.has_next %}
+            <a href="?page={{ pagination.next_num }}{% if execution_id %}&execution_id={{ execution_id }}{% endif %}" class="pagination-btn" title="Next Page">▶️</a>
+            <a href="?page={{ pagination.pages }}{% if execution_id %}&execution_id={{ execution_id }}{% endif %}" class="pagination-btn" title="Last Page">⏩</a>
+            {% endif %}
+        </div>
+        <div class="pagination-jump">
+            <input type="number" id="pageJump" min="1" max="{{ pagination.pages }}" value="{{ pagination.page }}" style="width: 60px; padding: 4px; text-align: center;">
+            <button onclick="jumpToPage()" class="btn btn-sm btn-secondary">Go</button>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Tweet Details Modal -->
+<div id="tweetModal" class="modal" onclick="closeTweetModal()">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 id="modalTitle">Tweet Details</h3>
+            <button onclick="closeTweetModal()" class="modal-close">×</button>
+        </div>
+        <div id="modalBody" class="modal-body">
+            <!-- Details will be loaded here -->
+        </div>
+    </div>
+</div>
+
+<script>
+let tweetsData = {{ tweets|tojson }};
+
+function toggleFilters() {
+    const filtersSection = document.getElementById('filtersSection');
+    const toggleBtn = document.getElementById('filterToggle');
+    
+    if (filtersSection.style.display === 'none') {
+        filtersSection.style.display = 'block';
+        toggleBtn.textContent = '🔼 Hide Filters';
+    } else {
+        filtersSection.style.display = 'none';
+        toggleBtn.textContent = '🔍 Filters';
+    }
+}
+
+function clearFilters() {
+    document.getElementById('executionFilter').value = '';
+    window.location.href = '{{ url_for("scraped_tweets_page") }}';
+}
+
+function applyFilters() {
+    const executionId = document.getElementById('executionFilter').value.trim();
+    let url = '{{ url_for("scraped_tweets_page") }}';
+    
+    if (executionId) {
+        url += '?execution_id=' + encodeURIComponent(executionId);
+    }
+    
+    window.location.href = url;
+}
+
+function refreshData() {
+    window.location.reload();
+}
+
+function jumpToPage() {
+    const pageNum = document.getElementById('pageJump').value;
+    let url = '?page=' + pageNum;
+    {% if execution_id %}
+    url += '&execution_id={{ execution_id }}';
+    {% endif %}
+    window.location.href = url;
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showNotification('Tweet ID copied to clipboard!', 'success');
+    }).catch(() => {
+        // Fallback for browsers without clipboard API
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        showNotification('Tweet ID copied to clipboard!', 'success');
+    });
+}
+
+function toggleContent(button) {
+    const contentPreview = button.parentElement.querySelector('.content-preview');
+    const fullContent = button.getAttribute('data-full-content');
+    
+    if (button.textContent === 'Show More') {
+        contentPreview.textContent = fullContent;
+        button.textContent = 'Show Less';
+    } else {
+        contentPreview.textContent = fullContent.substring(0, 100) + '...';
+        button.textContent = 'Show More';
+    }
+}
+
+function showTweetDetails(tweetId) {
+    const tweet = tweetsData.find(t => t['Tweet ID'] === tweetId);
+    if (!tweet) return;
+    
+    const modalBody = document.getElementById('modalBody');
+    modalBody.innerHTML = `
+        <div class="tweet-details">
+            <div class="detail-row">
+                <strong>Tweet ID:</strong> 
+                <span>${tweet['Tweet ID']} <button onclick="copyToClipboard('${tweet['Tweet ID']}')" class="copy-btn-small">📋</button></span>
+            </div>
+            <div class="detail-row">
+                <strong>Content:</strong>
+                <div class="detail-content">${tweet['Content']}</div>
+            </div>
+            <div class="detail-row">
+                <strong>Date:</strong> ${tweet['Date'] || 'N/A'}
+            </div>
+            <div class="detail-row">
+                <strong>Engagement:</strong>
+                <div class="engagement-grid">
+                    <div>❤️ ${tweet['Likes'].toLocaleString()} Likes</div>
+                    <div>🔄 ${tweet['Retweets'].toLocaleString()} Retweets</div>
+                    <div>💬 ${tweet['Replies'].toLocaleString()} Replies</div>
+                    <div>🔗 ${tweet['Quotes'].toLocaleString()} Quotes</div>
+                    <div>👁️ ${tweet['Views'].toLocaleString()} Views</div>
+                </div>
+            </div>
+            <div class="detail-row">
+                <strong>URLs:</strong>
+                <div class="url-links">
+                    <a href="${tweet['URL']}" target="_blank" class="detail-link">View Tweet</a>
+                    ${tweet['Tweet'] ? `<a href="${tweet['Tweet']}" target="_blank" class="detail-link">Twitter Link</a>` : ''}
+                </div>
+            </div>
+            <div class="detail-row">
+                <strong>Execution Info:</strong>
+                <div class="execution-info">
+                    <div>ID: ${tweet['execution_id']}</div>
+                    <div>Source: ${tweet['source_url']}</div>
+                    <div>Ingested: ${tweet['created_at']}</div>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('tweetModal').style.display = 'flex';
+}
+
+function closeTweetModal() {
+    document.getElementById('tweetModal').style.display = 'none';
+}
+
+function exportPageToCSV() {
+    const headers = ['#', 'Tweet ID', 'Content', 'Date', 'Likes', 'Retweets', 'Replies', 'Quotes', 'Views', 'URL', 'Status', 'Execution ID'];
+    const csvContent = [
+        headers.join(','),
+        ...tweetsData.map((tweet, index) => [
+            {{ pagination.start_index }} + index,
+            `"${tweet['Tweet ID']}"`,
+            `"${tweet['Content'].replace(/"/g, '""')}"`,
+            `"${tweet['Date'] || ''}"`,
+            tweet['Likes'],
+            tweet['Retweets'],
+            tweet['Replies'],
+            tweet['Quotes'],
+            tweet['Views'],
+            `"${tweet['URL']}"`,
+            `"${tweet['Status']}"`,
+            `"${tweet['execution_id']}"`
+        ].join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'scraped_tweets_page_' + {{ pagination.page }} + '_' + new Date().toISOString().slice(0,10) + '.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
+    
+    showNotification('CSV exported successfully!', 'success');
+}
+
+function showNotification(message, type) {
+    let notification = document.getElementById('notification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'notification';
+        notification.style.position = 'fixed';
+        notification.style.top = '20px';
+        notification.style.right = '20px';
+        notification.style.zIndex = '10000';
+        notification.style.maxWidth = '400px';
+        notification.style.padding = '15px 20px';
+        notification.style.borderRadius = '8px';
+        notification.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+        notification.style.fontWeight = 'bold';
+        notification.style.cursor = 'pointer';
+        document.body.appendChild(notification);
+        
+        notification.onclick = function() {
+            notification.style.display = 'none';
+        };
+    }
+    
+    const colors = type === 'success' 
+        ? { bg: '#e8f5e8', text: '#2e7d32', border: '#4caf50' }
+        : { bg: '#ffebee', text: '#c62828', border: '#f44336' };
+    
+    notification.style.backgroundColor = colors.bg;
+    notification.style.color = colors.text;
+    notification.style.border = `1px solid ${colors.border}`;
+    notification.innerHTML = `${type === 'success' ? '✅' : '❌'} ${message}`;
+    notification.style.display = 'block';
+    
+    setTimeout(() => {
+        if (notification) {
+            notification.style.display = 'none';
+        }
+    }, 3000);
+}
+
+// Enable keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    if (e.ctrlKey || e.metaKey) {
+        switch(e.key) {
+            case 'f':
+                e.preventDefault();
+                toggleFilters();
+                break;
+            case 'r':
+                e.preventDefault();
+                refreshData();
+                break;
+        }
+    }
+    
+    if (e.key === 'Escape') {
+        closeTweetModal();
+    }
+});
+</script>
+
+<style>
+/* Stats Dashboard Card */
+.stats-dashboard-card {
+    background: white;
+    border-radius: 20px;
+    padding: 30px;
+    margin-bottom: 30px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    animation: slideUp 0.6s ease-out;
+}
+
+.stats-dashboard-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.stats-dashboard-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+.dashboard-header {
+    text-align: center;
+    margin-bottom: 25px;
+    position: relative;
+    z-index: 1;
+}
+
+.dashboard-header h3 {
+    font-size: 1.5rem;
+    color: #333;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.dashboard-header p {
+    color: #666;
+    font-size: 0.95rem;
+    margin: 0;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+}
+
+.stat-card {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+}
+
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.5s;
+}
+
+.stat-card:hover::before {
+    left: 100%;
+}
+
+.stat-icon {
+    font-size: 2rem;
+    margin-bottom: 10px;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-bottom: 5px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.stat-label {
+    font-size: 0.9rem;
+    opacity: 0.9;
+}
+
+/* Excel-like Table */
+.table-container {
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-bottom: 20px;
+}
+
+.excel-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.excel-table th {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    padding: 12px 8px;
+    text-align: left;
+    border-right: 1px solid rgba(255,255,255,0.2);
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.excel-table th:last-child {
+    border-right: none;
+}
+
+.excel-table td {
+    padding: 12px 8px;
+    border-bottom: 1px solid #eee;
+    border-right: 1px solid #f0f0f0;
+    vertical-align: top;
+}
+
+.excel-table td:last-child {
+    border-right: none;
+}
+
+.excel-table tbody tr:hover {
+    background-color: #f8f9ff;
+    transition: background-color 0.2s ease;
+}
+
+.excel-table tbody tr:nth-child(even) {
+    background-color: #fafafa;
+}
+
+.excel-table tbody tr:nth-child(even):hover {
+    background-color: #f0f2ff;
+}
+
+/* Column Styles */
+.col-index {
+    width: 60px;
+    text-align: center;
+    font-weight: bold;
+    color: #667eea;
+    background-color: #f8f9fa !important;
+}
+
+.col-tweet-id {
+    width: 180px;
+    font-family: monospace;
+}
+
+.col-content {
+    min-width: 300px;
+    max-width: 400px;
+}
+
+.col-date {
+    width: 140px;
+}
+
+.col-engagement {
+    width: 120px;
+}
+
+.col-stats {
+    width: 100px;
+}
+
+.col-actions {
+    width: 80px;
+    text-align: center;
+}
+
+/* Cell Components */
+.tweet-id-cell {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tweet-id-text {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    color: #495057;
+}
+
+.copy-btn, .copy-btn-small {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+.copy-btn:hover, .copy-btn-small:hover {
+    background-color: #e9ecef;
+}
+
+.content-cell {
+    line-height: 1.4;
+}
+
+.content-preview {
+    margin-bottom: 5px;
+    color: #333;
+}
+
+.expand-btn {
+    background: none;
+    border: none;
+    color: #667eea;
+    cursor: pointer;
+    font-size: 12px;
+    text-decoration: underline;
+}
+
+.expand-btn:hover {
+    color: #5a6fd8;
+}
+
+.date-cell {
+    display: flex;
+    flex-direction: column;
+}
+
+.date-primary {
+    font-weight: 600;
+    color: #333;
+}
+
+.date-time {
+    font-size: 11px;
+    color: #666;
+}
+
+.engagement-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.engagement-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+}
+
+.engagement-icon {
+    font-size: 10px;
+}
+
+.engagement-value {
+    font-weight: 600;
+    color: #495057;
+}
+
+.stats-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+}
+
+.stat-label {
+    color: #666;
+}
+
+.stat-value {
+    font-weight: 600;
+    color: #495057;
+}
+
+.actions-cell {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+}
+
+.action-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.action-btn:hover {
+    background-color: #e9ecef;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #666;
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 20px;
+}
+
+.empty-state h3 {
+    margin-bottom: 10px;
+    color: #495057;
+}
+
+/* Pagination */
+.pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 0;
+    border-top: 1px solid #eee;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.pagination-info {
+    color: #666;
+    font-weight: 500;
+}
+
+.pagination-controls {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.pagination-btn {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    background: white;
+    color: #495057;
+    text-decoration: none;
+    border-radius: 4px;
+    transition: all 0.2s;
+    font-size: 14px;
+}
+
+.pagination-btn:hover {
+    background: #f8f9fa;
+    border-color: #667eea;
+    color: #667eea;
+}
+
+.pagination-active {
+    background: #667eea !important;
+    color: white !important;
+    border-color: #667eea !important;
+}
+
+.pagination-ellipsis {
+    padding: 8px 4px;
+    color: #666;
+}
+
+.pagination-jump {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pagination-jump input {
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+/* Modal */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 10000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.3s ease;
+}
+
+.modal-content {
+    background: white;
+    border-radius: 12px;
+    max-width: 600px;
+    width: 90%;
+    max-height: 80vh;
+    overflow-y: auto;
+    animation: slideIn 0.3s ease;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: #667eea;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #999;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.modal-close:hover {
+    background-color: #f0f0f0;
+    color: #666;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.tweet-details {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.detail-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.detail-row strong {
+    color: #495057;
+    font-size: 14px;
+}
+
+.detail-content {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 6px;
+    line-height: 1.5;
+}
+
+.engagement-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin-top: 5px;
+}
+
+.engagement-grid > div {
+    background: #f0f8ff;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    text-align: center;
+}
+
+.url-links {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.detail-link {
+    color: #667eea;
+    text-decoration: none;
+    padding: 6px 12px;
+    border: 1px solid #667eea;
+    border-radius: 6px;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.detail-link:hover {
+    background: #667eea;
+    color: white;
+}
+
+.execution-info {
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 12px;
+}
+
+.execution-info > div {
+    margin-bottom: 4px;
+}
+
+/* Animations */
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9) translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .col-content {
+        min-width: 250px;
+        max-width: 300px;
+    }
+}
+
+@media (max-width: 900px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .stats-dashboard-card {
+        padding: 20px;
+    }
+    
+    .excel-table {
+        font-size: 12px;
+    }
+    
+    .excel-table th,
+    .excel-table td {
+        padding: 8px 6px;
+    }
+    
+    .col-content {
+        min-width: 200px;
+        max-width: 250px;
+    }
+    
+    .pagination-container {
+        flex-direction: column;
+        text-align: center;
+    }
+}
+
+@media (max-width: 600px) {
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .table-container {
+        overflow-x: auto;
+    }
+    
+    .excel-table {
+        min-width: 800px;
+    }
+    
+    .modal-content {
+        width: 95%;
+        margin: 10px;
+    }
+}
+
+/* Button Styles */
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+
+/* Additional responsive utilities */
+@media (max-width: 768px) {
+    .card {
+        padding: 15px;
+    }
+    
+    .pagination-jump input {
+        width: 50px;
+    }
+}
+</style>
+
+{% endblock %}

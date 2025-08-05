@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+
+{% block title %}Database Administration - CoopHive{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="/" class="btn btn-secondary">← Back to Home</a>
+</div>
+
+<!-- Database Status Section -->
+<div class="card">
+    <h3 style="color: #667eea; margin-bottom: 20px;">🗄️ Database Status & Management</h3>
+    
+    <div style="max-width: 800px; margin: 0 auto;">
+        <p style="font-size: 1.1rem; color: #666; margin-bottom: 30px;">
+            Monitor database health, perform migrations, and manage backups.
+        </p>
+        
+        <!-- Status Display -->
+        <div id="statusSection" style="margin-bottom: 30px;">
+            <div style="text-align: center; padding: 20px;">
+                <div class="spinner" style="display: inline-block; margin-bottom: 15px;"></div>
+                <p style="color: #666;">Loading database status...</p>
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 30px;">
+            <button id="refreshBtn" class="btn btn-secondary" onclick="loadDatabaseStatus()">
+                🔄 Refresh Status
+            </button>
+            <button id="migrateBtn" class="btn btn-primary" onclick="performMigration()" disabled>
+                🚀 Run Migration
+            </button>
+            <button id="backupBtn" class="btn btn-success" onclick="createBackup()">
+                💾 Create Backup
+            </button>
+        </div>
+        
+        <!-- Migration Information -->
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+            <h4 style="color: #495057; margin-bottom: 15px;">ℹ️ About Database Migrations</h4>
+            <ul style="color: #666; line-height: 1.6; margin: 0;">
+                <li><strong>Self-Upgrading:</strong> Database now automatically migrates on startup</li>
+                <li><strong>No Data Loss:</strong> Migrations preserve existing data while updating schema</li>
+                <li><strong>Version Tracking:</strong> Each migration is tracked and logged</li>
+                <li><strong>Safe Operations:</strong> Migrations are transactional and can be rolled back</li>
+                <li><strong>Manual Override:</strong> Force migration if automatic process fails</li>
+            </ul>
+        </div>
+        
+        <!-- Security Notice -->
+        <div style="background: #e8f5e8; padding: 20px; border-radius: 10px; border-left: 4px solid #4caf50;">
+            <h4 style="color: #2e7d32; margin-bottom: 10px;">🔐 Security Notice</h4>
+            <p style="color: #2e7d32; margin: 0;">
+                Migration and backup operations require Basic Authentication (coophive_ops:testpass123).
+                Database status is publicly viewable for monitoring purposes.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 9999; display: none; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 30px; border-radius: 10px; text-align: center;">
+        <div class="spinner" style="margin-bottom: 15px;"></div>
+        <p id="loadingMessage" style="margin: 0; font-weight: bold;">Processing...</p>
+    </div>
+</div>
+
+<script>
+let currentStatus = null;
+
+// Load database status on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadDatabaseStatus();
+});
+
+function loadDatabaseStatus() {
+    showLoading('Loading database status...');
+    
+    fetch('/api/database-status')
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.status === 'success') {
+            currentStatus = data.database;
+            displayDatabaseStatus(data.database);
+        } else {
+            displayError('Failed to load database status: ' + (data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        displayError('Error loading database status: ' + error.message);
+    });
+}
+
+function displayDatabaseStatus(dbStatus) {
+    const statusSection = document.getElementById('statusSection');
+    const migrateBtn = document.getElementById('migrateBtn');
+    
+    // Enable/disable migration button
+    migrateBtn.disabled = !dbStatus.needs_migration;
+    
+    // Get status color
+    let statusColor = '#4caf50'; // success - green
+    let statusIcon = '✅';
+    let statusText = 'Connected';
+    
+    if (dbStatus.status === 'error') {
+        statusColor = '#f44336'; // error - red  
+        statusIcon = '❌';
+        statusText = 'Error';
+    } else if (dbStatus.needs_migration) {
+        statusColor = '#ff9800'; // warning - orange
+        statusIcon = '⚠️';
+        statusText = 'Needs Migration';
+    }
+    
+    statusSection.innerHTML = `
+        <div style="background: ${statusColor}20; border: 2px solid ${statusColor}; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 15px;">
+                <span style="font-size: 2rem; margin-right: 10px;">${statusIcon}</span>
+                <h4 style="color: ${statusColor}; margin: 0;">${statusText}</h4>
+            </div>
+            <p style="color: ${statusColor}; text-align: center; margin: 0; font-weight: bold;">${dbStatus.message}</p>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                <h4 style="color: #495057; margin: 0 0 10px 0;">Current Version</h4>
+                <span style="font-size: 1.5rem; color: #667eea; font-weight: bold;">${dbStatus.version}</span>
+            </div>
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                <h4 style="color: #495057; margin: 0 0 10px 0;">Target Version</h4>
+                <span style="font-size: 1.5rem; color: #667eea; font-weight: bold;">${dbStatus.target_version}</span>
+            </div>
+        </div>
+        
+        ${dbStatus.tables && dbStatus.tables.length > 0 ? `
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+            <h4 style="color: #495057; margin-bottom: 10px;">Database Tables:</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                ${dbStatus.tables.map(table => `<span style="background: #667eea; color: white; padding: 4px 8px; border-radius: 4px; font-size: 0.9rem;">${table}</span>`).join('')}
+            </div>
+        </div>
+        ` : ''}
+    `;
+}
+
+function performMigration() {
+    if (!confirm('Are you sure you want to run database migration? This will update the database schema.')) {
+        return;
+    }
+    
+    showLoading('Running database migration...');
+    
+    fetch('/api/database-migrate', {
+        method: 'POST',
+        headers: {
+            'Authorization': 'Basic ' + btoa('coophive_ops:testpass123'),
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.status === 'success') {
+            showNotification('Database migration completed successfully!', 'success');
+            loadDatabaseStatus(); // Refresh status
+        } else {
+            displayError('Migration failed: ' + (data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        displayError('Error running migration: ' + error.message);
+    });
+}
+
+function createBackup() {
+    if (!confirm('Create a backup of the current database?')) {
+        return;
+    }
+    
+    showLoading('Creating database backup...');
+    
+    fetch('/api/database-backup', {
+        method: 'POST',
+        headers: {
+            'Authorization': 'Basic ' + btoa('coophive_ops:testpass123'),
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        hideLoading();
+        if (data.status === 'success') {
+            showNotification(data.message, 'success');
+        } else {
+            displayError('Backup failed: ' + (data.message || 'Unknown error'));
+        }
+    })
+    .catch(error => {
+        hideLoading();
+        displayError('Error creating backup: ' + error.message);
+    });
+}
+
+function showLoading(message) {
+    document.getElementById('loadingMessage').textContent = message;
+    document.getElementById('loadingOverlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').style.display = 'none';
+}
+
+function displayError(message) {
+    const statusSection = document.getElementById('statusSection');
+    statusSection.innerHTML = `
+        <div style="background: #ffebee; border: 2px solid #f44336; border-radius: 10px; padding: 20px; text-align: center;">
+            <span style="font-size: 2rem; margin-bottom: 10px; display: block;">❌</span>
+            <h4 style="color: #c62828; margin-bottom: 10px;">Error</h4>
+            <p style="color: #c62828; margin: 0;">${message}</p>
+        </div>
+    `;
+}
+
+function showNotification(message, type) {
+    // Create or update notification element
+    let notification = document.getElementById('notification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'notification';
+        notification.style.position = 'fixed';
+        notification.style.top = '20px';
+        notification.style.right = '20px';
+        notification.style.zIndex = '10000';
+        notification.style.maxWidth = '400px';
+        notification.style.padding = '15px 20px';
+        notification.style.borderRadius = '8px';
+        notification.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+        notification.style.fontWeight = 'bold';
+        notification.style.cursor = 'pointer';
+        document.body.appendChild(notification);
+        
+        notification.onclick = function() {
+            notification.style.display = 'none';
+        };
+    }
+    
+    const colors = type === 'success' 
+        ? { bg: '#e8f5e8', text: '#2e7d32', border: '#4caf50' }
+        : { bg: '#ffebee', text: '#c62828', border: '#f44336' };
+    
+    notification.style.backgroundColor = colors.bg;
+    notification.style.color = colors.text;
+    notification.style.border = `1px solid ${colors.border}`;
+    notification.innerHTML = `${type === 'success' ? '✅' : '❌'} ${message}`;
+    notification.style.display = 'block';
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        if (notification) {
+            notification.style.display = 'none';
+        }
+    }, 5000);
+}
+</script>
+
+<style>
+.spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #667eea;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+</style>
+
+{% endblock %}

@@ -2,6 +2,8 @@
 # Simple, professional web app for reviewing and editing AI-generated tweets
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response
+from flask_httpauth import HTTPBasicAuth
+from werkzeug.security import check_password_hash, generate_password_hash
 import json
 import os
 from datetime import datetime
@@ -10,7 +12,7 @@ import io
 from datetime import datetime
 import secrets
 import requests
-from database import save_campaign_data, get_campaign_data, update_tweet_content, update_tweet_status, init_database
+from database import save_campaign_data, get_campaign_data, update_tweet_content, update_tweet_status, init_database, check_duplicate_scraped_tweets, save_scraped_tweets, get_scraped_tweets, get_scraped_tweets_stats, get_database_status, force_migration, backup_database
 
 # Initialize database on startup
 print("DEBUG: Initializing database...")
@@ -23,8 +25,80 @@ except Exception as e:
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 
+# Initialize Basic Authentication
+auth = HTTPBasicAuth()
+
+# Basic Auth users - coophive_ops / testpass123 as specified in upgrade plan
+users = {
+    "coophive_ops": generate_password_hash("testpass123")
+}
+
+@auth.verify_password
+def verify_password(username, password):
+    """Verify Basic Auth credentials for API endpoints"""
+    if username in users and check_password_hash(users.get(username), password):
+        return username
+    return None
+
 # Database storage for production (with fallback to in-memory for demo)
 tweet_storage = {}  # Fallback for demo mode
+
+# ============================================================================
+# SECURITY HEADERS & LOGGING MIDDLEWARE
+# ============================================================================
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    
+    # Add execution ID to response headers if available in request
+    if hasattr(request, 'execution_id'):
+        response.headers['X-Execution-ID'] = request.execution_id
+    
+    return response
+
+@app.before_request
+def log_request_info():
+    """Enhanced logging for all requests, especially authenticated ones"""
+    # Extract execution ID from request if present
+    execution_id = None
+    if request.is_json and request.get_json(silent=True):
+        json_data = request.get_json(silent=True)
+        # Handle both array format (like in.json) and direct object format
+        if isinstance(json_data, list) and len(json_data) > 0:
+            execution_id = json_data[0].get('execution_id')
+        elif isinstance(json_data, dict):
+            execution_id = json_data.get('execution_id')
+    
+    # Also check headers
+    if not execution_id:
+        execution_id = request.headers.get('X-Execution-ID')
+    
+    # Store in request context for use in response headers
+    if execution_id:
+        request.execution_id = execution_id
+    
+    # Enhanced logging for API endpoints
+    if request.path.startswith('/api/'):
+        # Safely get auth user info
+        auth_user = 'anonymous'
+        if hasattr(request, 'authorization') and request.authorization:
+            auth_user = getattr(request.authorization, 'username', 'anonymous')
+        
+        log_msg = f"API Request: {request.method} {request.path} | User: {auth_user}"
+        
+        if execution_id:
+            log_msg += f" | Execution-ID: {execution_id}"
+        
+        if request.remote_addr:
+            log_msg += f" | IP: {request.remote_addr}"
+        
+        print(f"SECURITY LOG: {log_msg}")
 
 @app.route('/')
 def index():
@@ -38,8 +112,13 @@ def campaigns_page():
 
 @app.route('/upload')
 def upload_page():
-    """Upload JSON data page"""
-    return render_template('upload.html')
+    """Redirect to duplicate check page - old upload is deprecated"""
+    return redirect('/duplicate-check')
+
+@app.route('/duplicate-check')
+def duplicate_check_page():
+    """Duplicate check upload page"""
+    return render_template('duplicate_check.html')
 
 @app.route('/status')
 def status_page():
@@ -75,6 +154,48 @@ def deleted_page():
 def all_tweets_page():
     """All tweets page with CSV download"""
     return render_template('all_tweets.html')
+
+@app.route('/scraped-tweets')
+def scraped_tweets_page():
+    """Scraped tweets page with Excel-like interface and pagination"""
+    # Get pagination parameters
+    page = request.args.get('page', 1, type=int)
+    per_page = 50  # Fixed at 50 per page as requested
+    offset = (page - 1) * per_page
+    
+    # Get execution_id filter if provided
+    execution_id = request.args.get('execution_id', None)
+    
+    # Get tweets with pagination
+    tweets_data, total_count = get_scraped_tweets(limit=per_page, offset=offset, execution_id=execution_id)
+    
+    # Calculate pagination info
+    total_pages = (total_count + per_page - 1) // per_page
+    has_prev = page > 1
+    has_next = page < total_pages
+    
+    # Get statistics for dashboard
+    stats = get_scraped_tweets_stats()
+    
+    # Pagination info
+    pagination = {
+        'page': page,
+        'per_page': per_page,
+        'total': total_count,
+        'pages': total_pages,
+        'has_prev': has_prev,
+        'has_next': has_next,
+        'prev_num': page - 1 if has_prev else None,
+        'next_num': page + 1 if has_next else None,
+        'start_index': offset + 1 if tweets_data else 0,
+        'end_index': min(offset + per_page, total_count)
+    }
+    
+    return render_template('scraped_tweets.html', 
+                         tweets=tweets_data, 
+                         pagination=pagination,
+                         stats=stats,
+                         execution_id=execution_id)
 
 @app.route('/review/<campaign_batch>')
 def review_tweets(campaign_batch):
@@ -130,7 +251,14 @@ def review_tweets(campaign_batch):
 def receive_tweets():
     """Endpoint to receive tweet data from n8n workflow"""
     try:
-        data = request.get_json()
+        raw_data = request.get_json()
+        
+        # Handle array format from n8n (like in.json)
+        if isinstance(raw_data, list) and len(raw_data) > 0:
+            data = raw_data[0]  # Take first element
+        else:
+            data = raw_data
+            
         campaign_batch = data.get('campaign_batch')
         
         if campaign_batch:
@@ -708,6 +836,337 @@ def export_tweets_csv():
             
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/export-scraped-tweets-csv')
+def export_scraped_tweets_csv():
+    """Export scraped tweets as CSV"""
+    try:
+        # Get all scraped tweets (no pagination for export)
+        tweets_data, total_count = get_scraped_tweets()
+        
+        if not tweets_data:
+            return jsonify({'status': 'error', 'message': 'No scraped tweets found'}), 404
+        
+        # Create CSV
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header
+        headers = [
+            'Tweet_ID', 'URL', 'Content', 'Date', 'Likes', 'Retweets', 
+            'Replies', 'Quotes', 'Views', 'Status', 'Tweet_URL', 
+            'Execution_ID', 'Source_URL', 'Created_At', 'Engagement_Total'
+        ]
+        writer.writerow(headers)
+        
+        # Write data
+        for tweet in tweets_data:
+            row = [
+                tweet.get('Tweet ID', ''),
+                tweet.get('URL', ''),
+                tweet.get('Content', ''),
+                tweet.get('Date', ''),
+                tweet.get('Likes', 0),
+                tweet.get('Retweets', 0),
+                tweet.get('Replies', 0),
+                tweet.get('Quotes', 0),
+                tweet.get('Views', 0),
+                tweet.get('Status', ''),
+                tweet.get('Tweet', ''),
+                tweet.get('execution_id', ''),
+                tweet.get('source_url', ''),
+                tweet.get('created_at', ''),
+                tweet.get('engagement_total', 0)
+            ]
+            writer.writerow(row)
+        
+        # Create response
+        csv_content = output.getvalue()
+        output.close()
+        
+        response = make_response(csv_content)
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=scraped_tweets_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        
+        return response
+            
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# ============================================================================
+# SCRAPED TWEETS API ENDPOINTS (Phase 1 - Security & Foundation)
+# ============================================================================
+
+@app.route('/api/check-duplicate-tweet', methods=['POST'])
+@auth.login_required
+def check_duplicate_tweet():
+    """
+    Check for duplicate tweets in database - SECURE ENDPOINT
+    Expected payload: {
+        "execution_id": "exec_20250804_143022_n8n_a1b2c3d4",
+        "source_url": "https://n8n.coophive.network",
+        "tweets": [...]
+    }
+    OR array format: [{...}]
+    Returns: {
+        "status": "success",
+        "new_tweets": [...],
+        "duplicates_found": N,
+        "execution_id": "...",
+        "processed_count": N
+    }
+    """
+    try:
+        # Get request data
+        raw_data = request.get_json()
+        if not raw_data:
+            return jsonify({'status': 'error', 'message': 'No JSON data provided'}), 400
+        
+        # Handle both array format (like in.json) and direct object format
+        if isinstance(raw_data, list) and len(raw_data) > 0:
+            data = raw_data[0]  # Extract the first object from array
+        elif isinstance(raw_data, dict):
+            data = raw_data
+        else:
+            return jsonify({'status': 'error', 'message': 'Invalid JSON format - expected object or array with object'}), 400
+        
+        execution_id = data.get('execution_id')
+        source_url = data.get('source_url')
+        tweets = data.get('tweets', [])
+        
+        # Validation
+        if not execution_id:
+            return jsonify({'status': 'error', 'message': 'Missing execution_id'}), 400
+        if not source_url:
+            return jsonify({'status': 'error', 'message': 'Missing source_url'}), 400
+        if not tweets or not isinstance(tweets, list):
+            return jsonify({'status': 'error', 'message': 'Missing or invalid tweets array'}), 400
+        
+        # Extract tweet IDs for duplicate checking
+        tweet_ids = []
+        for tweet in tweets:
+            if tweet.get('Tweet ID'):
+                tweet_ids.append(tweet['Tweet ID'])
+            else:
+                return jsonify({'status': 'error', 'message': f'Tweet missing "Tweet ID" field: {tweet}'}), 400
+        
+        print(f"DEBUG: Duplicate check request - execution_id: {execution_id}, tweet_count: {len(tweets)}")
+        
+        # Check for duplicates using IMPROVED LOGIC (execution_id first, then Tweet ID)
+        existing_ids, new_ids = check_duplicate_scraped_tweets(tweet_ids, execution_id)
+        
+        # Filter tweets to return only new ones
+        new_tweets = [tweet for tweet in tweets if tweet['Tweet ID'] in new_ids]
+        
+        # SAVE non-duplicate tweets to database
+        saved_count = 0
+        save_errors = []
+        
+        if new_tweets:
+            try:
+                saved_count, error_count, errors = save_scraped_tweets(new_tweets, execution_id, source_url)
+                print(f"DEBUG: Successfully saved {saved_count} scraped tweets")
+                if error_count > 0:
+                    save_errors.extend(errors)
+                    print(f"DEBUG: {error_count} errors occurred during save")
+            except Exception as save_error:
+                save_errors.append(str(save_error))
+                print(f"ERROR: Failed to save tweets to database: {save_error}")
+        
+        # Log the results
+        print(f"DEBUG: Duplicate check complete - {len(existing_ids)} duplicates, {len(new_tweets)} new tweets, {saved_count} saved")
+        
+        # Enhanced response with detailed information for both Web UI and n8n API
+        response_status = 'success'
+        if save_errors:
+            response_status = 'warning' if saved_count > 0 else 'error'
+        
+        # Create detailed message
+        if len(existing_ids) == 0 and len(new_tweets) > 0:
+            main_message = f"✅ Success: All {len(tweets)} tweets are new and have been saved to database"
+        elif len(existing_ids) > 0 and len(new_tweets) > 0:
+            main_message = f"⚠️ Partial: Found {len(existing_ids)} duplicates, saved {saved_count} new tweets to database"
+        elif len(existing_ids) > 0 and len(new_tweets) == 0:
+            main_message = f"🔄 All Duplicates: All {len(tweets)} tweets already exist in database (no new data saved)"
+        else:
+            main_message = f"❌ Error: Unable to process tweets"
+        
+        response = {
+            'status': response_status,
+            'message': main_message,
+            'summary': {
+                'total_processed': len(tweets),
+                'duplicates_found': len(existing_ids),
+                'new_tweets_found': len(new_tweets),
+                'saved_to_database': saved_count,
+                'execution_id_duplicates': len([tid for tid in existing_ids if execution_id]) if execution_id else 0,
+                'tweet_id_duplicates': len(existing_ids)
+            },
+            'data': {
+                'new_tweets': new_tweets,
+                'duplicate_ids': existing_ids,
+                'execution_id': execution_id,
+                'source_url': source_url
+            },
+            'debug_info': {
+                'processed_count': len(tweets),
+                'saved_count': saved_count,
+                'error_count': len(save_errors)
+            }
+        }
+        
+        if save_errors:
+            response['errors'] = save_errors
+            response['message'] += f" ({len(save_errors)} save errors occurred)"
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        print(f"ERROR: check_duplicate_tweet failed: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/store-scraped-tweets', methods=['POST'])
+@auth.login_required
+def store_scraped_tweets():
+    """
+    Store scraped tweets in database - SECURE ENDPOINT
+    Expected payload: {
+        "execution_id": "exec_20250804_143022_n8n_a1b2c3d4",
+        "source_url": "https://n8n.coophive.network",
+        "tweets": [...]
+    }
+    Returns: {
+        "status": "success",
+        "stored_count": N,
+        "error_count": N,
+        "errors": [...],
+        "execution_id": "..."
+    }
+    """
+    try:
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({'status': 'error', 'message': 'No JSON data provided'}), 400
+        
+        execution_id = data.get('execution_id')
+        source_url = data.get('source_url')
+        tweets = data.get('tweets', [])
+        
+        # Validation
+        if not execution_id:
+            return jsonify({'status': 'error', 'message': 'Missing execution_id'}), 400
+        if not source_url:
+            return jsonify({'status': 'error', 'message': 'Missing source_url'}), 400
+        if not tweets or not isinstance(tweets, list):
+            return jsonify({'status': 'error', 'message': 'Missing or invalid tweets array'}), 400
+        
+        # Validate tweet structure
+        for i, tweet in enumerate(tweets):
+            required_fields = ['Tweet ID', 'URL', 'Content', 'Date']
+            missing_fields = [field for field in required_fields if not tweet.get(field)]
+            if missing_fields:
+                return jsonify({
+                    'status': 'error', 
+                    'message': f'Tweet {i+1} missing required fields: {missing_fields}'
+                }), 400
+        
+        print(f"DEBUG: Store tweets request - execution_id: {execution_id}, tweet_count: {len(tweets)}")
+        
+        # Save tweets to database
+        success_count, error_count, errors = save_scraped_tweets(tweets, execution_id, source_url)
+        
+        # Log the results
+        print(f"DEBUG: Store tweets complete - {success_count} stored, {error_count} errors")
+        
+        if success_count > 0:
+            status_code = 200
+            status = 'success'
+            message = f'Successfully stored {success_count} tweets'
+            if error_count > 0:
+                message += f' ({error_count} errors)'
+        else:
+            status_code = 500
+            status = 'error'
+            message = f'Failed to store any tweets ({error_count} errors)'
+        
+        response_data = {
+            'status': status,
+            'message': message,
+            'stored_count': success_count,
+            'error_count': error_count,
+            'errors': errors,
+            'execution_id': execution_id,
+            'source_url': source_url,
+            'processed_count': len(tweets)
+        }
+        
+        return jsonify(response_data), status_code
+        
+    except Exception as e:
+        print(f"ERROR: store_scraped_tweets failed: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# ============================================================================
+# DATABASE ADMIN ENDPOINTS (Phase 1 - Database Management)
+# ============================================================================
+
+@app.route('/api/database-status', methods=['GET'])
+def get_db_status():
+    """Get database status and migration information - PUBLIC ENDPOINT"""
+    try:
+        status = get_database_status()
+        return jsonify({
+            'status': 'success',
+            'database': status
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/database-migrate', methods=['POST'])
+@auth.login_required
+def trigger_migration():
+    """Manually trigger database migration - SECURE ENDPOINT"""
+    try:
+        success = force_migration()
+        if success:
+            status = get_database_status()
+            return jsonify({
+                'status': 'success',
+                'message': 'Database migration completed successfully',
+                'database': status
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': 'Database migration failed'
+            }), 500
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/database-backup', methods=['POST'])
+@auth.login_required
+def create_backup():
+    """Create database backup - SECURE ENDPOINT (SQLite only)"""
+    try:
+        success, message = backup_database()
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': message
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': message
+            }), 400
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/database-admin')
+def database_admin_page():
+    """Database administration page"""
+    return render_template('database_admin.html')
 
 def get_sample_data():
     """Sample data for demo purposes"""

@@ -3,50 +3,498 @@
 {% block title %}Tweet Manager{% endblock %}
 
 {% block content %}
-<div class="card" style="text-align: center; padding: 50px;">
-    <h2 style="margin-bottom: 30px; color: #667eea;">Welcome to Tweet Manager</h2>
-    
-    <div style="max-width: 500px; margin: 0 auto;">
-        <p style="font-size: 1.2rem; color: #666; margin-bottom: 40px;">
-            Review and edit AI-generated social media content.
-        </p>
-        
-        <div style="margin-bottom: 30px;">
-            <a href="/upload" class="btn btn-primary" style="margin: 10px; text-decoration: none;">
-                📁 Upload JSON Data
+<!-- Hero Card Section -->
+<div class="hero-card">
+    <div class="hero-content">
+        <h2>Welcome to Tweet Manager</h2>
+        <p>Review and edit AI-generated social media content with powerful tools and analytics.</p>
+        <div class="hero-actions">
+            <a href="/duplicate-check" class="btn btn-hero-primary">🔍 Check Duplicates</a>
+            <a href="/scraped-tweets" class="btn btn-hero-secondary">📊 View Data</a>
+        </div>
+    </div>
+</div>
+
+<!-- Main Dashboard -->
+<div class="dashboard-grid">
+    <!-- Content Management Section -->
+    <div class="dashboard-card">
+        <div class="card-header">
+            <h3>📝 Content Management</h3>
+            <p>Create, upload, and manage your content</p>
+        </div>
+        <div class="card-actions">
+            <a href="/upload" class="action-btn primary">
+                <span class="action-icon">📁</span>
+                <div class="action-content">
+                    <strong>Upload JSON Data</strong>
+                    <small>Import AI-generated content</small>
+                </div>
             </a>
-            <a href="/campaigns" class="btn btn-secondary" style="margin: 10px; text-decoration: none;">
-                📋 View Campaigns
+            <a href="/campaigns" class="action-btn">
+                <span class="action-icon">📋</span>
+                <div class="action-content">
+                    <strong>View Campaigns</strong>
+                    <small>Manage campaign data</small>
+                </div>
+            </a>
+            <a href="/duplicate-check" class="action-btn">
+                <span class="action-icon">🔍</span>
+                <div class="action-content">
+                    <strong>Check Duplicates</strong>
+                    <small>Validate unique content</small>
+                </div>
             </a>
         </div>
-        
-        <div style="margin-bottom: 30px;">
-            <h4 style="color: #667eea; margin-bottom: 15px;">Quick Access by Status:</h4>
-            <a href="/drafts" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
-                📝 Drafts
+    </div>
+
+    <!-- Tweet Status Section -->
+    <div class="dashboard-card">
+        <div class="card-header">
+            <h3>📊 Tweet Status</h3>
+            <p>Quick access by content status</p>
+        </div>
+        <div class="card-actions status-grid">
+            <a href="/drafts" class="status-btn draft">
+                <span class="status-icon">📝</span>
+                <div class="status-content">
+                    <strong>Drafts</strong>
+                    <small>Pending review</small>
+                </div>
             </a>
-            <a href="/approved" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
-                ✅ Approved
+            <a href="/approved" class="status-btn approved">
+                <span class="status-icon">✅</span>
+                <div class="status-content">
+                    <strong>Approved</strong>
+                    <small>Ready to post</small>
+                </div>
             </a>
-            <a href="/posted" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
-                🚀 Posted
+            <a href="/posted" class="status-btn posted">
+                <span class="status-icon">🚀</span>
+                <div class="status-content">
+                    <strong>Posted</strong>
+                    <small>Live content</small>
+                </div>
             </a>
-            <a href="/rejected" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
-                ❌ Rejected
-            </a>
-            <a href="/deleted" class="btn btn-secondary" style="margin: 5px; text-decoration: none;">
-                🗑️ Deleted
+            <a href="/rejected" class="status-btn rejected">
+                <span class="status-icon">❌</span>
+                <div class="status-content">
+                    <strong>Rejected</strong>
+                    <small>Not approved</small>
+                </div>
             </a>
         </div>
-        
-        <div style="margin-bottom: 30px;">
-            <a href="/all-tweets" class="btn btn-primary" style="margin: 10px; text-decoration: none;">
-                📋 All Tweets & CSV Export
+    </div>
+
+    <!-- Data & Analytics Section -->
+    <div class="dashboard-card">
+        <div class="card-header">
+            <h3>📈 Data & Analytics</h3>
+            <p>View insights and export data</p>
+        </div>
+        <div class="card-actions">
+            <a href="/scraped-tweets" class="action-btn primary">
+                <span class="action-icon">📊</span>
+                <div class="action-content">
+                    <strong>Scraped Tweets Database</strong>
+                    <small>Excel-like data view</small>
+                </div>
             </a>
-            <a href="/status" class="btn btn-secondary" style="margin: 10px; text-decoration: none;">
-                🔧 System Status
+            <a href="/all-tweets" class="action-btn">
+                <span class="action-icon">📋</span>
+                <div class="action-content">
+                    <strong>All Tweets & Export</strong>
+                    <small>Complete data export</small>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <!-- System Management Section -->
+    <div class="dashboard-card">
+        <div class="card-header">
+            <h3>⚙️ System Management</h3>
+            <p>Monitor and manage your system</p>
+        </div>
+        <div class="card-actions">
+            <a href="/status" class="action-btn">
+                <span class="action-icon">🔧</span>
+                <div class="action-content">
+                    <strong>System Status</strong>
+                    <small>Health monitoring</small>
+                </div>
+            </a>
+            <a href="/database-admin" class="action-btn success">
+                <span class="action-icon">🗄️</span>
+                <div class="action-content">
+                    <strong>Database Admin</strong>
+                    <small>Advanced management</small>
+                </div>
             </a>
         </div>
     </div>
 </div>
+
+<!-- Quick Stats Section -->
+<div class="quick-stats">
+    <div class="stat-item">
+        <div class="stat-icon">📊</div>
+        <div class="stat-content">
+            <h4>Powerful Analytics</h4>
+            <p>Real-time insights into your content performance</p>
+        </div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-icon">⚡</div>
+        <div class="stat-content">
+            <h4>Fast Performance</h4>
+            <p>Optimized for speed with smart caching</p>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Hero Card Section */
+.hero-card {
+    background: white;
+    border-radius: 20px;
+    padding: 50px 40px;
+    text-align: center;
+    margin-bottom: 40px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    animation: slideDown 0.6s ease-out;
+}
+
+.hero-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.hero-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+}
+
+.hero-content {
+    position: relative;
+    z-index: 1;
+}
+
+.hero-content h2 {
+    font-size: 3rem;
+    font-weight: 300;
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.hero-content p {
+    font-size: 1.3rem;
+    color: #666;
+    margin-bottom: 40px;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.hero-actions {
+    display: flex;
+    gap: 20px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.btn-hero-primary, .btn-hero-secondary {
+    padding: 15px 30px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    display: inline-block;
+}
+
+.btn-hero-primary {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
+}
+
+.btn-hero-primary:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 35px rgba(102, 126, 234, 0.4);
+}
+
+.btn-hero-secondary {
+    background: rgba(255, 255, 255, 0.9);
+    color: #667eea;
+    border: 2px solid rgba(102, 126, 234, 0.2);
+}
+
+.btn-hero-secondary:hover {
+    background: white;
+    border-color: #667eea;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 30px;
+    margin-bottom: 50px;
+    max-width: 1000px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.dashboard-card {
+    background: white;
+    border-radius: 20px;
+    padding: 30px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.dashboard-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+}
+
+.dashboard-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.12);
+}
+
+.card-header {
+    margin-bottom: 25px;
+}
+
+.card-header h3 {
+    font-size: 1.5rem;
+    color: #333;
+    margin-bottom: 8px;
+    font-weight: 600;
+}
+
+.card-header p {
+    color: #666;
+    font-size: 0.95rem;
+    margin: 0;
+}
+
+.card-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 18px 20px;
+    border-radius: 12px;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+}
+
+.action-btn:hover {
+    background: #667eea;
+    color: white;
+    transform: translateX(5px);
+    box-shadow: 0 5px 15px rgba(102, 126, 234, 0.2);
+}
+
+.action-btn.primary {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+    border-color: rgba(102, 126, 234, 0.2);
+}
+
+.action-btn.success:hover {
+    background: #51cf66;
+}
+
+.action-icon {
+    font-size: 1.5rem;
+    min-width: 30px;
+}
+
+.action-content strong {
+    display: block;
+    font-size: 1rem;
+    margin-bottom: 2px;
+    color: inherit;
+}
+
+.action-content small {
+    display: block;
+    opacity: 0.7;
+    font-size: 0.85rem;
+}
+
+/* Status Grid */
+.status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+}
+
+.status-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+}
+
+.status-btn.draft:hover { background: #e3f2fd; border-color: #2196f3; }
+.status-btn.approved:hover { background: #e8f5e8; border-color: #4caf50; }
+.status-btn.posted:hover { background: #fff3e0; border-color: #ff9800; }
+.status-btn.rejected:hover { background: #ffebee; border-color: #f44336; }
+
+.status-icon {
+    font-size: 1.2rem;
+}
+
+.status-content strong {
+    display: block;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.status-content small {
+    display: block;
+    opacity: 0.7;
+    font-size: 0.75rem;
+}
+
+/* Quick Stats */
+.quick-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 30px;
+    margin-top: 40px;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    padding: 25px;
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 15px;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.stat-item .stat-icon {
+    font-size: 2.5rem;
+    opacity: 0.8;
+}
+
+.stat-content h4 {
+    font-size: 1.1rem;
+    color: #333;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.stat-content p {
+    color: #666;
+    font-size: 0.9rem;
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .dashboard-grid {
+        max-width: 800px;
+    }
+}
+
+@media (max-width: 768px) {
+    .hero-content h2 {
+        font-size: 2.2rem;
+    }
+    
+    .hero-content p {
+        font-size: 1.1rem;
+    }
+    
+    .dashboard-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+        max-width: 100%;
+    }
+    
+    .dashboard-card {
+        padding: 20px;
+    }
+    
+    .status-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .quick-stats {
+        grid-template-columns: 1fr;
+        gap: 20px;
+        max-width: 100%;
+    }
+    
+    .stat-item {
+        padding: 20px;
+    }
+}
+
+/* Animation */
+.dashboard-card {
+    animation: fadeInUp 0.6s ease-out;
+}
+
+.dashboard-card:nth-child(1) { animation-delay: 0.1s; }
+.dashboard-card:nth-child(2) { animation-delay: 0.2s; }
+.dashboard-card:nth-child(3) { animation-delay: 0.3s; }
+.dashboard-card:nth-child(4) { animation-delay: 0.4s; }
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+</style>
 {% endblock %}

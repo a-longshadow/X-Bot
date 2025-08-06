@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Boolean, JSON, inspect
+from sqlalchemy import create_engine, Column, String, Text, DateTime, Integer, Boolean, JSON, inspect, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
@@ -175,20 +175,25 @@ def migrate_database():
             # Update version
             set_database_version(2, "Added scraped_tweets table with enhanced duplicate checking")
         
-        # Migration to version 3 - Add display_name column to campaigns
+        # Migration to version 3 - Add display_name column to campaigns (non-destructive)
         if current_version < 3:
             print("DEBUG: Migrating to version 3 - Adding display_name column to campaigns")
             
-            # Add display_name column to campaigns table
-            try:
-                session.execute('ALTER TABLE campaigns ADD COLUMN display_name VARCHAR(300)')
-                print("DEBUG: Added display_name column to campaigns table")
-            except Exception as e:
-                # Column might already exist, check if it's a duplicate column error
-                if "duplicate column name" in str(e).lower() or "already exists" in str(e).lower():
-                    print("DEBUG: display_name column already exists, skipping")
-                else:
-                    raise e
+            # Use IF NOT EXISTS approach - check if column already exists first
+            inspector = inspect(_engine)
+            campaigns_columns = inspector.get_columns('campaigns')
+            existing_columns = [col['name'] for col in campaigns_columns]
+            
+            if 'display_name' not in existing_columns:
+                try:
+                    # Use proper text() wrapper for SQLAlchemy 2.0+
+                    session.execute(text('ALTER TABLE campaigns ADD COLUMN display_name VARCHAR(300)'))
+                    print("DEBUG: Added display_name column to campaigns table")
+                except Exception as e:
+                    print(f"DEBUG: Failed to add display_name column: {e}")
+                    # Don't raise - this is non-destructive, just log and continue
+            else:
+                print("DEBUG: display_name column already exists, skipping")
             
             # Update version
             set_database_version(3, "Added display_name column to campaigns for human-readable names")
@@ -939,5 +944,47 @@ def delete_campaign_cascade(campaign_batch, hard_delete=False):
         session.rollback()
         print(f"DEBUG: Error deleting campaign: {e}")
         return False, f"Delete failed: {str(e)}", 0
+    finally:
+        session.close()
+
+def bulk_delete_scraped_tweets(tweet_ids):
+    """Bulk delete scraped tweets by their tweet_ids
+    
+    Args:
+        tweet_ids: List of tweet IDs to delete
+    
+    Returns:
+        (success: bool, message: str, deleted_count: int)
+    """
+    global _engine
+    if _engine is None:
+        return False, "Database not initialized", 0
+    
+    if not tweet_ids:
+        return False, "No tweet IDs provided", 0
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    
+    try:
+        # Get scraped tweets that match the IDs
+        scraped_tweets = session.query(ScrapedTweet).filter(ScrapedTweet.tweet_id.in_(tweet_ids)).all()
+        
+        if not scraped_tweets:
+            return False, "No matching scraped tweets found", 0
+        
+        # Delete the scraped tweets
+        deleted_count = 0
+        for tweet in scraped_tweets:
+            session.delete(tweet)
+            deleted_count += 1
+        
+        session.commit()
+        return True, f"Successfully deleted {deleted_count} scraped tweets", deleted_count
+        
+    except Exception as e:
+        session.rollback()
+        print(f"DEBUG: Error bulk deleting scraped tweets: {e}")
+        return False, f"Bulk delete failed: {str(e)}", 0
     finally:
         session.close() 

@@ -2,7 +2,6 @@
 # Simple, professional web app for reviewing and editing AI-generated tweets
 
 from flask import Flask, render_template, request, jsonify, redirect, url_for, make_response
-from flask_httpauth import HTTPBasicAuth
 from werkzeug.security import check_password_hash, generate_password_hash
 import json
 import os
@@ -12,7 +11,7 @@ import io
 from datetime import datetime
 import secrets
 import requests
-from database import save_campaign_data, get_campaign_data, update_tweet_content, update_tweet_status, init_database, check_duplicate_scraped_tweets, save_scraped_tweets, get_scraped_tweets, get_scraped_tweets_stats, get_database_status, force_migration, backup_database, delete_campaign_cascade
+from database import save_campaign_data, get_campaign_data, update_tweet_content, update_tweet_status, init_database, check_duplicate_scraped_tweets, save_scraped_tweets, get_scraped_tweets, get_scraped_tweets_stats, get_database_status, force_migration, backup_database, delete_campaign_cascade, bulk_delete_scraped_tweets
 
 # Initialize database on startup
 print("DEBUG: Initializing database...")
@@ -25,20 +24,7 @@ except Exception as e:
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 
-# Initialize Basic Authentication
-auth = HTTPBasicAuth()
-
-# Basic Auth users - coophive_ops / testpass123 as specified in upgrade plan
-users = {
-    "coophive_ops": generate_password_hash("testpass123")
-}
-
-@auth.verify_password
-def verify_password(username, password):
-    """Verify Basic Auth credentials for API endpoints"""
-    if username in users and check_password_hash(users.get(username), password):
-        return username
-    return None
+# Authentication removed - direct access to all endpoints
 
 # Database storage for production (with fallback to in-memory for demo)
 tweet_storage = {}  # Fallback for demo mode
@@ -85,12 +71,7 @@ def log_request_info():
     
     # Enhanced logging for API endpoints
     if request.path.startswith('/api/'):
-        # Safely get auth user info
-        auth_user = 'anonymous'
-        if hasattr(request, 'authorization') and request.authorization:
-            auth_user = getattr(request.authorization, 'username', 'anonymous')
-        
-        log_msg = f"API Request: {request.method} {request.path} | User: {auth_user}"
+        log_msg = f"API Request: {request.method} {request.path}"
         
         if execution_id:
             log_msg += f" | Execution-ID: {execution_id}"
@@ -199,8 +180,7 @@ def scraped_tweets_page():
 
 @app.route('/review/<campaign_batch>')
 def review_tweets(campaign_batch):
-    """Main tweet review interface - NO RESTRICTIONS"""
-    token = request.args.get('token', 'demo_token')  # Default token for unrestricted access
+    """Main tweet review interface - Direct access, no authentication required"""
     
     # DEBUG: Print available campaigns
     print(f"DEBUG: Looking for campaign '{campaign_batch}'")
@@ -244,8 +224,7 @@ def review_tweets(campaign_batch):
     
     return render_template('review.html', 
                          campaign=campaign_data,
-                         campaign_batch=campaign_batch,
-                         token=token)
+                         campaign_batch=campaign_batch)
 
 @app.route('/api/receive-tweets', methods=['POST'])
 def receive_tweets():
@@ -807,6 +786,38 @@ def update_campaign_name():
         print(f"DEBUG: Update campaign name error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/bulk-delete-scraped-tweets', methods=['POST'])
+def bulk_delete_scraped_tweets_endpoint():
+    """Bulk delete scraped tweets"""
+    try:
+        data = request.get_json()
+        tweet_ids = data.get('tweet_ids', [])
+        
+        if not tweet_ids:
+            return jsonify({'status': 'error', 'message': 'tweet_ids is required'}), 400
+        
+        print(f"DEBUG: Bulk delete scraped tweets - {len(tweet_ids)} tweets")
+        
+        # Use the bulk delete function from database.py
+        success, message, deleted_count = bulk_delete_scraped_tweets(tweet_ids)
+        
+        if success:
+            return jsonify({
+                'status': 'success',
+                'message': message,
+                'deleted_count': deleted_count,
+                'tweet_ids': tweet_ids
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': message
+            }), 404
+            
+    except Exception as e:
+        print(f"DEBUG: Bulk delete scraped tweets error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/api/all-tweets')
 def get_all_tweets():
     """Get all tweets from all campaigns"""
@@ -982,7 +993,6 @@ def export_scraped_tweets_csv():
 # ============================================================================
 
 @app.route('/api/check-duplicate-tweet', methods=['POST'])
-@auth.login_required
 def check_duplicate_tweet():
     """
     Check for duplicate tweets in database - SECURE ENDPOINT
@@ -1110,7 +1120,6 @@ def check_duplicate_tweet():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/store-scraped-tweets', methods=['POST'])
-@auth.login_required
 def store_scraped_tweets():
     """
     Store scraped tweets in database - SECURE ENDPOINT
@@ -1208,7 +1217,6 @@ def get_db_status():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/database-migrate', methods=['POST'])
-@auth.login_required
 def trigger_migration():
     """Manually trigger database migration - SECURE ENDPOINT"""
     try:
@@ -1229,7 +1237,6 @@ def trigger_migration():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/database-backup', methods=['POST'])
-@auth.login_required
 def create_backup():
     """Create database backup - SECURE ENDPOINT (SQLite only)"""
     try:

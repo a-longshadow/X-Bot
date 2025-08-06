@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/joe/Documents/GitHub <> Monday.com/flask_app/app.py", line 5, in <module>
+    from flask_httpauth import HTTPBasicAuth
+ModuleNotFoundError: No module named 'flask_httpauth'

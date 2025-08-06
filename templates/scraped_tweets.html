@@ -59,6 +59,14 @@
             <a href="/api/export-scraped-tweets-csv" class="btn btn-success" title="Export all scraped tweets to CSV" style="text-decoration: none;">
                 📊 Export All CSV
             </a>
+            <div id="bulkActionsContainer" style="display: none;">
+                <label style="margin-right: 15px;">
+                    <input type="checkbox" id="selectAllTweets" onchange="toggleSelectAllTweets()"> Select All
+                </label>
+                <button onclick="bulkDeleteScrapedTweets()" class="btn btn-danger" style="font-size: 0.9rem;">
+                    🗑️ Delete Selected
+                </button>
+            </div>
             <button onclick="toggleFilters()" class="btn btn-secondary" id="filterToggle">
                 🔍 Filters
             </button>
@@ -93,6 +101,7 @@
         <table class="excel-table" id="tweetsTable">
             <thead>
                 <tr>
+                    <th class="col-checkbox">Select</th>
                     <th class="col-index">#</th>
                     <th class="col-tweet-id" data-sort="Tweet ID">Tweet ID</th>
                     <th class="col-content" data-sort="Content">Content</th>
@@ -105,6 +114,9 @@
             <tbody>
                 {% for tweet in tweets %}
                 <tr class="tweet-row" data-tweet-id="{{ tweet['Tweet ID'] }}">
+                    <td class="col-checkbox">
+                        <input type="checkbox" class="tweet-checkbox" value="{{ tweet['Tweet ID'] }}" onchange="updateBulkActions()">
+                    </td>
                     <td class="col-index">{{ pagination.start_index + loop.index0 }}</td>
                     <td class="col-tweet-id">
                         <div class="tweet-id-cell">
@@ -456,6 +468,77 @@ document.addEventListener('keydown', function(e) {
         closeTweetModal();
     }
 });
+
+// Bulk delete functionality for scraped tweets
+function updateBulkActions() {
+    const checkboxes = document.querySelectorAll('.tweet-checkbox');
+    const checkedBoxes = document.querySelectorAll('.tweet-checkbox:checked');
+    const bulkContainer = document.getElementById('bulkActionsContainer');
+    
+    if (checkedBoxes.length > 0) {
+        bulkContainer.style.display = 'block';
+    } else {
+        bulkContainer.style.display = 'none';
+    }
+    
+    // Update select all checkbox
+    const selectAllCheckbox = document.getElementById('selectAllTweets');
+    if (checkedBoxes.length === checkboxes.length) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    } else if (checkedBoxes.length > 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = true;
+    } else {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    }
+}
+
+function toggleSelectAllTweets() {
+    const selectAllCheckbox = document.getElementById('selectAllTweets');
+    const checkboxes = document.querySelectorAll('.tweet-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+    
+    updateBulkActions();
+}
+
+async function bulkDeleteScrapedTweets() {
+    const checkedBoxes = document.querySelectorAll('.tweet-checkbox:checked');
+    if (checkedBoxes.length === 0) {
+        alert('Please select tweets to delete');
+        return;
+    }
+    
+    const tweetIds = Array.from(checkedBoxes).map(cb => cb.value);
+    
+    if (!confirm(`Are you sure you want to permanently delete ${tweetIds.length} scraped tweet(s)? This action cannot be undone.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/bulk-delete-scraped-tweets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                tweet_ids: tweetIds
+            })
+        });
+        
+        const result = await response.json();
+        if (result.status === 'success') {
+            alert(`Successfully deleted ${result.deleted_count} scraped tweet(s).`);
+            refreshData(); // Reload the page
+        } else {
+            alert(`Failed to delete scraped tweets: ${result.message}`);
+        }
+    } catch (error) {
+        alert(`Error deleting scraped tweets: ${error.message}`);
+    }
+}
 </script>
 
 <style>

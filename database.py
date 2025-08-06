@@ -8,7 +8,7 @@ import json
 Base = declarative_base()
 
 # Database version for migration tracking
-CURRENT_DB_VERSION = 2
+CURRENT_DB_VERSION = 3
 
 # Global engine and session factory for connection reuse
 _engine = None
@@ -32,6 +32,7 @@ class Campaign(Base):
     title = Column(String(200))
     description = Column(Text)
     source_type = Column(String(50))
+    display_name = Column(String(300))  # Human-readable campaign name
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -174,10 +175,23 @@ def migrate_database():
             # Update version
             set_database_version(2, "Added scraped_tweets table with enhanced duplicate checking")
         
-        # Add more migration steps here as needed
-        # if current_version < 3:
-        #     # Migration to version 3
-        #     pass
+        # Migration to version 3 - Add display_name column to campaigns
+        if current_version < 3:
+            print("DEBUG: Migrating to version 3 - Adding display_name column to campaigns")
+            
+            # Add display_name column to campaigns table
+            try:
+                session.execute('ALTER TABLE campaigns ADD COLUMN display_name VARCHAR(300)')
+                print("DEBUG: Added display_name column to campaigns table")
+            except Exception as e:
+                # Column might already exist, check if it's a duplicate column error
+                if "duplicate column name" in str(e).lower() or "already exists" in str(e).lower():
+                    print("DEBUG: display_name column already exists, skipping")
+                else:
+                    raise e
+            
+            # Update version
+            set_database_version(3, "Added display_name column to campaigns for human-readable names")
         
         session.commit()
         print(f"DEBUG: Database migration completed - now at version {CURRENT_DB_VERSION}")
@@ -225,51 +239,59 @@ def get_session():
     return session
 
 def save_campaign_data(campaign_data):
-    """Save campaign and tweets to database - SIMPLE VERSION"""
+    """Save campaign and tweets to database with smart collision handling and display names"""
     global _engine
     if _engine is None:
         init_database()
     
-    print(f"DEBUG: Saving campaign {campaign_data['campaign_batch']} with {len(campaign_data.get('tweets', []))} tweets")
+    original_batch = campaign_data['campaign_batch']
+    print(f"DEBUG: Saving campaign {original_batch} with {len(campaign_data.get('tweets', []))} tweets")
+    
+    # Handle campaign batch ID collision
+    unique_campaign_batch = get_unique_campaign_batch(original_batch)
+    if unique_campaign_batch != original_batch:
+        print(f"DEBUG: Campaign batch collision resolved: {original_batch} -> {unique_campaign_batch}")
+        campaign_data['campaign_batch'] = unique_campaign_batch
+    
+    # Generate human-readable display name
+    display_name = generate_display_name(campaign_data)
+    print(f"DEBUG: Generated display name: '{display_name}'")
     
     # Create a fresh session for this operation
     Session = sessionmaker(bind=_engine)
     session = Session()
     
     try:
-        # Check for existing campaign
-        existing_campaign = session.query(Campaign).filter_by(campaign_batch=campaign_data['campaign_batch']).first()
-        if existing_campaign:
-            print(f"ERROR: Campaign {campaign_data['campaign_batch']} already exists in database")
-            return False
-        
-        # Check for existing tweet IDs
+        # Handle tweet ID collisions
         tweets_to_save = campaign_data.get('tweets', [])
         for tweet_data in tweets_to_save:
-            existing_tweet = session.query(Tweet).filter_by(id=tweet_data['id']).first()
-            if existing_tweet:
-                print(f"ERROR: Tweet ID {tweet_data['id']} already exists in database")
-                return False
+            original_id = tweet_data['id']
+            unique_id = get_unique_tweet_id(original_id, unique_campaign_batch)
+            if unique_id != original_id:
+                print(f"DEBUG: Tweet ID collision resolved: {original_id} -> {unique_id}")
+                tweet_data['id'] = unique_id
+            # Update campaign_batch reference in tweet
+            tweet_data['campaign_batch'] = unique_campaign_batch
         
-        # Save campaign
+        # Save campaign with display name
         campaign = Campaign(
-            campaign_batch=campaign_data['campaign_batch'],
+            campaign_batch=unique_campaign_batch,
             generated_at=datetime.fromisoformat(campaign_data['generated_at']),
-            tweet_count=campaign_data['tweet_count'],
+            tweet_count=len(tweets_to_save),  # Use actual count
             analysis_summary=campaign_data.get('analysis_summary', {}),
             title=campaign_data.get('title', ''),
             description=campaign_data.get('description', ''),
-            source_type=campaign_data.get('source_type', 'unknown')
+            source_type=campaign_data.get('source_type', 'api'),
+            display_name=display_name
         )
         session.add(campaign)
         
         # Save tweets
-        tweets_to_save = campaign_data.get('tweets', [])
         for i, tweet_data in enumerate(tweets_to_save):
             print(f"DEBUG: Saving tweet {i+1}: {tweet_data.get('id', 'NO_ID')}")
             tweet = Tweet(
                 id=tweet_data['id'],
-                campaign_batch=campaign_data['campaign_batch'],
+                campaign_batch=unique_campaign_batch,
                 type=tweet_data['type'],
                 content=tweet_data['content'],
                 character_count=tweet_data['character_count'],
@@ -284,7 +306,8 @@ def save_campaign_data(campaign_data):
         
         # Commit everything
         session.commit()
-        print(f"DEBUG: Successfully saved {len(tweets_to_save)} tweets to database")
+        print(f"DEBUG: Successfully saved campaign '{unique_campaign_batch}' with {len(tweets_to_save)} tweets")
+        print(f"DEBUG: Display name: '{display_name}'")
         return True
         
     except Exception as e:
@@ -324,6 +347,7 @@ def get_campaign_data(campaign_batch):
             'title': campaign.title or '',
             'description': campaign.description or '',
             'source_type': campaign.source_type or 'unknown',
+            'display_name': campaign.display_name or '',
             'tweets': []
         }
         
@@ -743,4 +767,177 @@ def backup_database(backup_path=None):
         return True, f"Database backed up to {backup_path}"
         
     except Exception as e:
-        return False, f"Backup failed: {str(e)}" 
+        return False, f"Backup failed: {str(e)}"
+
+# ============================================================================
+# ENHANCED CAMPAIGN MANAGEMENT FUNCTIONS
+# ============================================================================
+
+def generate_display_name(campaign_data):
+    """Generate human-readable display name from campaign analysis summary"""
+    try:
+        analysis = campaign_data.get('analysis_summary', {})
+        dominant_themes = analysis.get('dominant_themes', [])
+        tweet_count = len(campaign_data.get('tweets', []))
+        
+        # Extract date from campaign_batch or generated_at
+        date_str = ""
+        if 'generated_at' in campaign_data:
+            try:
+                date_obj = datetime.fromisoformat(campaign_data['generated_at'].replace('Z', '+00:00'))
+                date_str = date_obj.strftime("%b %d")
+            except:
+                pass
+        
+        # If no themes available, create generic name
+        if not dominant_themes:
+            if date_str:
+                return f"Content Batch - {date_str} ({tweet_count} tweets)"
+            else:
+                return f"Content Batch ({tweet_count} tweets)"
+        
+        # Create name from first 1-2 themes
+        if len(dominant_themes) >= 2:
+            theme_part = f"{dominant_themes[0]} & {dominant_themes[1]}"
+        else:
+            theme_part = dominant_themes[0]
+        
+        # Clean up theme names (remove common prefixes/suffixes)
+        theme_part = theme_part.replace("AI/ML ", "AI ").replace(" Technology", "").replace(" Community", "")
+        
+        if date_str:
+            return f"{theme_part} - {date_str} ({tweet_count} tweets)"
+        else:
+            return f"{theme_part} ({tweet_count} tweets)"
+            
+    except Exception as e:
+        print(f"DEBUG: Error generating display name: {e}")
+        tweet_count = len(campaign_data.get('tweets', []))
+        return f"Campaign ({tweet_count} tweets)"
+
+def get_unique_campaign_batch(original_batch):
+    """Get unique campaign batch ID by adding increment suffix if needed"""
+    global _engine
+    if _engine is None:
+        return original_batch
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    
+    try:
+        # Check if original exists
+        existing = session.query(Campaign).filter_by(campaign_batch=original_batch).first()
+        if not existing:
+            return original_batch
+        
+        # Find next available suffix
+        counter = 2
+        while counter <= 99:  # Reasonable limit
+            candidate = f"{original_batch}-v{counter}"
+            existing = session.query(Campaign).filter_by(campaign_batch=candidate).first()
+            if not existing:
+                return candidate
+            counter += 1
+        
+        # If all suffixes exhausted, add timestamp
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H%M%S")
+        return f"{original_batch}-{timestamp}"
+        
+    except Exception as e:
+        print(f"DEBUG: Error getting unique campaign batch: {e}")
+        return original_batch
+    finally:
+        session.close()
+
+def get_unique_tweet_id(original_id, campaign_batch):
+    """Get unique tweet ID by adding increment suffix if needed"""
+    global _engine
+    if _engine is None:
+        return original_id
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    
+    try:
+        # Check if original exists
+        existing = session.query(Tweet).filter_by(id=original_id).first()
+        if not existing:
+            return original_id
+        
+        # Find next available suffix
+        counter = 2
+        while counter <= 99:  # Reasonable limit
+            candidate = f"{original_id}-v{counter}"
+            existing = session.query(Tweet).filter_by(id=candidate).first()
+            if not existing:
+                return candidate
+            counter += 1
+        
+        # If all suffixes exhausted, add campaign suffix
+        base_id = original_id.split('-')[-1] if '-' in original_id else original_id
+        return f"{campaign_batch}-{base_id}"
+        
+    except Exception as e:
+        print(f"DEBUG: Error getting unique tweet ID: {e}")
+        return original_id
+    finally:
+        session.close()
+
+def delete_campaign_cascade(campaign_batch, hard_delete=False):
+    """Delete campaign and all associated tweets with cascade
+    
+    Args:
+        campaign_batch: Campaign batch ID to delete
+        hard_delete: If True, permanently delete from database. If False, mark as deleted.
+    
+    Returns:
+        (success: bool, message: str, deleted_count: int)
+    """
+    global _engine
+    if _engine is None:
+        return False, "Database not initialized", 0
+    
+    Session = sessionmaker(bind=_engine)
+    session = Session()
+    
+    try:
+        # Check if campaign exists
+        campaign = session.query(Campaign).filter_by(campaign_batch=campaign_batch).first()
+        if not campaign:
+            return False, f"Campaign '{campaign_batch}' not found", 0
+        
+        # Get associated tweets
+        tweets = session.query(Tweet).filter_by(campaign_batch=campaign_batch).all()
+        tweet_count = len(tweets)
+        
+        if hard_delete:
+            # Permanently delete tweets first (foreign key constraint)
+            for tweet in tweets:
+                session.delete(tweet)
+            
+            # Delete campaign
+            session.delete(campaign)
+            
+            session.commit()
+            return True, f"Permanently deleted campaign '{campaign_batch}' and {tweet_count} tweets", tweet_count
+        
+        else:
+            # Soft delete - mark as deleted
+            for tweet in tweets:
+                tweet.status = 'Deleted'
+                tweet.last_modified = datetime.utcnow()
+            
+            # Mark campaign with special status (we could add a status column later)
+            campaign.description = f"[DELETED] {campaign.description or ''}"
+            campaign.updated_at = datetime.utcnow()
+            
+            session.commit()
+            return True, f"Soft deleted campaign '{campaign_batch}' and {tweet_count} tweets", tweet_count
+        
+    except Exception as e:
+        session.rollback()
+        print(f"DEBUG: Error deleting campaign: {e}")
+        return False, f"Delete failed: {str(e)}", 0
+    finally:
+        session.close() 

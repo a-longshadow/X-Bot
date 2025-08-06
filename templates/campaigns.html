@@ -20,7 +20,20 @@
 
 <!-- Available Campaigns Section -->
 <div class="card">
-    <h3 style="color: #667eea; margin-bottom: 20px;">📋 Available Campaigns</h3>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 style="color: #667eea; margin: 0;">📋 Available Campaigns</h3>
+        <div id="bulkActionsContainer" style="display: none;">
+            <label style="margin-right: 15px;">
+                <input type="checkbox" id="selectAllCampaigns" onchange="toggleSelectAll()"> Select All
+            </label>
+            <button onclick="bulkDeleteCampaigns(false)" class="btn btn-warning" style="margin-right: 10px; font-size: 0.9rem;">
+                🗑️ Soft Delete Selected
+            </button>
+            <button onclick="bulkDeleteCampaigns(true)" class="btn btn-danger" style="font-size: 0.9rem;">
+                ⚠️ Permanently Delete Selected
+            </button>
+        </div>
+    </div>
     <div id="campaignsList">
         <p style="color: #666; text-align: center;">Loading campaigns...</p>
     </div>
@@ -124,12 +137,12 @@ async function loadCampaigns() {
                     statusText = 'Draft';
                 }
                 
-                // Use title if available, otherwise create readable name
-                let displayName = campaign.title || campaign.campaign_batch;
+                // Use display_name first, then title, then create readable name
+                let displayName = campaign.display_name || campaign.title || campaign.campaign_batch;
                 let subTitle = campaign.description || '';
                 
-                // If no title, create readable campaign name
-                if (!campaign.title) {
+                // If no display_name or title, create readable campaign name
+                if (!campaign.display_name && !campaign.title) {
                     if (isUpload) {
                         const datePart = campaign.campaign_batch.replace('uploaded_', '');
                         const year = datePart.substring(0, 4);
@@ -145,35 +158,50 @@ async function loadCampaigns() {
                 campaignsHtml += `
                     <div style="background: ${bgColor}; padding: 20px; border-radius: 10px; margin-bottom: 15px; border-left: 4px solid ${borderColor}; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-                            <div style="flex: 1;">
-                                <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                                    <span style="font-size: 1.2rem; margin-right: 8px;">${typeIcon}</span>
-                                    <span style="background: ${isUpload ? '#28a745' : '#007bff'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; margin-right: 10px;">
-                                        ${campaignType}
-                                    </span>
-                                    <span style="background: ${borderColor}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; margin-right: 10px;">
-                                        ${statusIcon} ${statusText}
-                                    </span>
-                                    <span style="color: #666; font-size: 0.8rem;">${campaign.campaign_batch}</span>
-                                </div>
-                                <h4 style="margin: 0 0 8px 0; color: #333; font-size: 1.1rem;">${displayName}</h4>
-                                ${subTitle ? `<div style="margin-bottom: 8px; color: #666; font-size: 0.9rem; font-style: italic;">${subTitle}</div>` : ''}
-                                <div style="margin-bottom: 8px; color: #666; font-size: 0.85rem;">
-                                    <strong>Created:</strong> ${humanDate}
-                                </div>
-                                <div style="display: flex; flex-wrap: wrap; gap: 15px; color: #666; font-size: 0.9rem;">
-                                    <span><strong>${campaign.tweet_count}</strong> tweets total</span>
-                                    ${approvedCount > 0 ? `<span style="color: #28a745;">✅ ${approvedCount} approved</span>` : ''}
-                                    ${postedCount > 0 ? `<span style="color: #007bff;">🚀 ${postedCount} posted</span>` : ''}
-                                    ${draftCount > 0 ? `<span style="color: #6c757d;">📝 ${draftCount} drafts</span>` : ''}
-                                    ${rejectedCount > 0 ? `<span style="color: #dc3545;">❌ ${rejectedCount} rejected</span>` : ''}
-                                    ${deletedCount > 0 ? `<span style="color: #6c757d;">🗑️ ${deletedCount} deleted</span>` : ''}
-                                    ${campaign.source ? `<span style="color: ${campaign.source === 'database' ? '#28a745' : '#ffc107'};">📊 ${campaign.source}</span>` : ''}
+                            <div style="display: flex; align-items: flex-start; flex: 1;">
+                                <label style="margin-right: 15px; margin-top: 5px;">
+                                    <input type="checkbox" class="campaign-checkbox" value="${campaign.campaign_batch}" onchange="updateBulkActions()">
+                                </label>
+                                <div style="flex: 1;">
+                                    <div style="display: flex; align-items: center; margin-bottom: 8px;">
+                                        <span style="font-size: 1.2rem; margin-right: 8px;">${typeIcon}</span>
+                                        <span style="background: ${isUpload ? '#28a745' : '#007bff'}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; margin-right: 10px;">
+                                            ${campaignType}
+                                        </span>
+                                        <span style="background: ${borderColor}; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; margin-right: 10px;">
+                                            ${statusIcon} ${statusText}
+                                        </span>
+                                        <span style="color: #666; font-size: 0.8rem;">${campaign.campaign_batch}</span>
+                                    </div>
+                                    <h4 style="margin: 0 0 8px 0; color: #333; font-size: 1.1rem; cursor: pointer;" onclick="editCampaignName('${campaign.campaign_batch}', '${displayName.replace(/'/g, "\\'")}')">
+                                        ${displayName} ✏️
+                                    </h4>
+                                    ${subTitle ? `<div style="margin-bottom: 8px; color: #666; font-size: 0.9rem; font-style: italic;">${subTitle}</div>` : ''}
+                                    <div style="margin-bottom: 8px; color: #666; font-size: 0.85rem;">
+                                        <strong>Created:</strong> ${humanDate}
+                                    </div>
+                                    <div style="display: flex; flex-wrap: wrap; gap: 15px; color: #666; font-size: 0.9rem;">
+                                        <span><strong>${campaign.tweet_count}</strong> tweets total</span>
+                                        ${approvedCount > 0 ? `<span style="color: #28a745;">✅ ${approvedCount} approved</span>` : ''}
+                                        ${postedCount > 0 ? `<span style="color: #007bff;">🚀 ${postedCount} posted</span>` : ''}
+                                        ${draftCount > 0 ? `<span style="color: #6c757d;">📝 ${draftCount} drafts</span>` : ''}
+                                        ${rejectedCount > 0 ? `<span style="color: #dc3545;">❌ ${rejectedCount} rejected</span>` : ''}
+                                        ${deletedCount > 0 ? `<span style="color: #6c757d;">🗑️ ${deletedCount} deleted</span>` : ''}
+                                        ${campaign.source ? `<span style="color: ${campaign.source === 'database' ? '#28a745' : '#ffc107'};">📊 ${campaign.source}</span>` : ''}
+                                    </div>
                                 </div>
                             </div>
-                            <a href="/review/${campaign.campaign_batch}" class="btn btn-primary" style="text-decoration: none; background: ${borderColor}; border-color: ${borderColor}; margin-left: 15px;">
-                                📝 Review
-                            </a>
+                            <div style="display: flex; flex-direction: column; gap: 10px; margin-left: 15px;">
+                                <a href="/review/${campaign.campaign_batch}" class="btn btn-primary" style="text-decoration: none; background: ${borderColor}; border-color: ${borderColor}; font-size: 0.9rem;">
+                                    📝 Review
+                                </a>
+                                <button onclick="deleteCampaign('${campaign.campaign_batch}', false)" class="btn btn-warning" style="font-size: 0.8rem;">
+                                    🗑️ Soft Delete
+                                </button>
+                                <button onclick="deleteCampaign('${campaign.campaign_batch}', true)" class="btn btn-danger" style="font-size: 0.8rem;">
+                                    ⚠️ Hard Delete
+                                </button>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -183,6 +211,146 @@ async function loadCampaigns() {
         }
     } catch (error) {
         console.error('Failed to load campaigns:', error);
+    }
+}
+
+// Bulk actions functionality
+function updateBulkActions() {
+    const checkboxes = document.querySelectorAll('.campaign-checkbox');
+    const checkedBoxes = document.querySelectorAll('.campaign-checkbox:checked');
+    const bulkContainer = document.getElementById('bulkActionsContainer');
+    
+    if (checkedBoxes.length > 0) {
+        bulkContainer.style.display = 'block';
+    } else {
+        bulkContainer.style.display = 'none';
+    }
+    
+    // Update select all checkbox
+    const selectAllCheckbox = document.getElementById('selectAllCampaigns');
+    if (checkedBoxes.length === checkboxes.length) {
+        selectAllCheckbox.checked = true;
+        selectAllCheckbox.indeterminate = false;
+    } else if (checkedBoxes.length > 0) {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = true;
+    } else {
+        selectAllCheckbox.checked = false;
+        selectAllCheckbox.indeterminate = false;
+    }
+}
+
+function toggleSelectAll() {
+    const selectAllCheckbox = document.getElementById('selectAllCampaigns');
+    const checkboxes = document.querySelectorAll('.campaign-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+    
+    updateBulkActions();
+}
+
+async function bulkDeleteCampaigns(hardDelete) {
+    const checkedBoxes = document.querySelectorAll('.campaign-checkbox:checked');
+    if (checkedBoxes.length === 0) {
+        alert('Please select campaigns to delete');
+        return;
+    }
+    
+    const campaignBatches = Array.from(checkedBoxes).map(cb => cb.value);
+    const deleteType = hardDelete ? 'permanently delete' : 'soft delete';
+    
+    if (!confirm(`Are you sure you want to ${deleteType} ${campaignBatches.length} campaign(s)? This action ${hardDelete ? 'cannot be undone' : 'can be undone'}.`)) {
+        return;
+    }
+    
+    let successCount = 0;
+    let errors = [];
+    
+    for (const campaignBatch of campaignBatches) {
+        try {
+            const response = await fetch('/api/delete-campaign', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    campaign_batch: campaignBatch, 
+                    hard_delete: hardDelete 
+                })
+            });
+            
+            const result = await response.json();
+            if (result.status === 'success') {
+                successCount++;
+            } else {
+                errors.push(`${campaignBatch}: ${result.message}`);
+            }
+        } catch (error) {
+            errors.push(`${campaignBatch}: ${error.message}`);
+        }
+    }
+    
+    if (successCount > 0) {
+        alert(`Successfully ${hardDelete ? 'permanently deleted' : 'soft deleted'} ${successCount} campaign(s).${errors.length > 0 ? ` Errors: ${errors.join('; ')}` : ''}`);
+        loadCampaigns(); // Reload the list
+    } else {
+        alert(`Failed to delete campaigns. Errors: ${errors.join('; ')}`);
+    }
+}
+
+async function deleteCampaign(campaignBatch, hardDelete) {
+    const deleteType = hardDelete ? 'permanently delete' : 'soft delete';
+    if (!confirm(`Are you sure you want to ${deleteType} campaign "${campaignBatch}"? This action ${hardDelete ? 'cannot be undone' : 'can be undone'}.`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/delete-campaign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                campaign_batch: campaignBatch, 
+                hard_delete: hardDelete 
+            })
+        });
+        
+        const result = await response.json();
+        if (result.status === 'success') {
+            alert(`Campaign ${hardDelete ? 'permanently deleted' : 'soft deleted'} successfully: ${result.message}`);
+            loadCampaigns(); // Reload the list
+        } else {
+            alert(`Failed to delete campaign: ${result.message}`);
+        }
+    } catch (error) {
+        alert(`Error deleting campaign: ${error.message}`);
+    }
+}
+
+async function editCampaignName(campaignBatch, currentName) {
+    const newName = prompt('Edit campaign name:', currentName);
+    if (newName === null || newName === currentName) {
+        return; // User cancelled or no change
+    }
+    
+    try {
+        // Note: We'll need to implement this API endpoint
+        const response = await fetch('/api/update-campaign-name', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                campaign_batch: campaignBatch, 
+                display_name: newName 
+            })
+        });
+        
+        const result = await response.json();
+        if (result.status === 'success') {
+            loadCampaigns(); // Reload to show updated name
+        } else {
+            alert(`Failed to update campaign name: ${result.message}`);
+        }
+    } catch (error) {
+        alert(`Error updating campaign name: ${error.message}`);
     }
 }
 

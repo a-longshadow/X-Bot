@@ -12,7 +12,7 @@ import io
 from datetime import datetime
 import secrets
 import requests
-from database import save_campaign_data, get_campaign_data, update_tweet_content, update_tweet_status, init_database, check_duplicate_scraped_tweets, save_scraped_tweets, get_scraped_tweets, get_scraped_tweets_stats, get_database_status, force_migration, backup_database
+from database import save_campaign_data, get_campaign_data, update_tweet_content, update_tweet_status, init_database, check_duplicate_scraped_tweets, save_scraped_tweets, get_scraped_tweets, get_scraped_tweets_stats, get_database_status, force_migration, backup_database, delete_campaign_cascade
 
 # Initialize database on startup
 print("DEBUG: Initializing database...")
@@ -568,6 +568,7 @@ def list_campaigns():
                     'title': getattr(campaign, 'title', f'Campaign {campaign.campaign_batch}'),
                     'description': getattr(campaign, 'description', 'No description available'),
                     'source_type': getattr(campaign, 'source_type', 'unknown'),
+                    'display_name': getattr(campaign, 'display_name', None),
                     'source': 'database',
                     'status_counts': status_counts
                 })
@@ -721,6 +722,89 @@ def delete_tweet():
             return jsonify({'status': 'error', 'message': f'Campaign "{campaign_batch}" or tweet "{tweet_id}" not found. Available: {available_campaigns}'}), 404
             
     except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/delete-campaign', methods=['POST'])
+def delete_campaign():
+    """Delete an entire campaign and all associated tweets"""
+    try:
+        data = request.get_json()
+        campaign_batch = data.get('campaign_batch')
+        hard_delete = data.get('hard_delete', False)  # Default to soft delete
+        
+        if not campaign_batch:
+            return jsonify({'status': 'error', 'message': 'campaign_batch is required'}), 400
+        
+        print(f"DEBUG: Delete campaign request - batch: '{campaign_batch}', hard_delete: {hard_delete}")
+        
+        # Use the new cascade delete function from database.py
+        success, message, deleted_count = delete_campaign_cascade(campaign_batch, hard_delete)
+        
+        if success:
+            # Also remove from in-memory storage if present (fallback mode)
+            if campaign_batch in tweet_storage:
+                del tweet_storage[campaign_batch]
+                print(f"DEBUG: Also removed campaign '{campaign_batch}' from memory storage")
+            
+            return jsonify({
+                'status': 'success',
+                'message': message,
+                'deleted_count': deleted_count,
+                'campaign_batch': campaign_batch,
+                'hard_delete': hard_delete
+            })
+        else:
+            return jsonify({
+                'status': 'error',
+                'message': message
+            }), 404
+            
+    except Exception as e:
+        print(f"DEBUG: Delete campaign error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/update-campaign-name', methods=['POST'])
+def update_campaign_name():
+    """Update campaign display name"""
+    try:
+        data = request.get_json()
+        campaign_batch = data.get('campaign_batch')
+        display_name = data.get('display_name', '')
+        
+        if not campaign_batch:
+            return jsonify({'status': 'error', 'message': 'campaign_batch is required'}), 400
+        
+        print(f"DEBUG: Update campaign name - batch: '{campaign_batch}', name: '{display_name}'")
+        
+        # Update in database
+        from database import get_session, Campaign
+        session = get_session()
+        try:
+            campaign = session.query(Campaign).filter_by(campaign_batch=campaign_batch).first()
+            if not campaign:
+                return jsonify({'status': 'error', 'message': f'Campaign "{campaign_batch}" not found'}), 404
+            
+            campaign.display_name = display_name
+            campaign.updated_at = datetime.utcnow()
+            session.commit()
+            
+            print(f"DEBUG: Successfully updated campaign name: '{display_name}'")
+            return jsonify({
+                'status': 'success',
+                'message': f'Campaign name updated to "{display_name}"',
+                'campaign_batch': campaign_batch,
+                'display_name': display_name
+            })
+            
+        except Exception as e:
+            session.rollback()
+            print(f"DEBUG: Database update error: {e}")
+            return jsonify({'status': 'error', 'message': f'Database error: {str(e)}'}), 500
+        finally:
+            session.close()
+            
+    except Exception as e:
+        print(f"DEBUG: Update campaign name error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/all-tweets')
